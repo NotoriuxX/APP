@@ -16,7 +16,8 @@ const PhotocopyPage = () => {
   const [customDateFrom, setCustomDateFrom] = useState('');
   const [customDateTo, setCustomDateTo] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [searchTerm, setSearchTerm] = useState('');  // Agregando estado searchTerm con valor inicial vacío
+  const [searchTerm, setSearchTerm] = useState('');
+  const [itemsPerPage, setItemsPerPage] = useState(10);  // Agregando el estado itemsPerPage
   const [stats, setStats] = useState({
     totalCopies: 0,
     totalSheets: 0,
@@ -36,6 +37,10 @@ const PhotocopyPage = () => {
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState('success'); // 'success' o 'error'
 
+  // Estado para controlar las animaciones CRUD
+  const [animatedRows, setAnimatedRows] = useState(new Set());
+  const [lastOperation, setLastOperation] = useState(null); // 'add', 'update', 'delete'
+
   // Función para mostrar toast
   const showToastMessage = (message, type = 'success') => {
     setToastMessage(message);
@@ -48,7 +53,7 @@ const PhotocopyPage = () => {
     }, 3000);
   };
 
-  const itemsPerPage = 10;
+  const itemsPerPageOptions = [5, 10, 25, 50];
   const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3300/api';
 
   // Función para obtener fecha actual para filtros
@@ -209,6 +214,19 @@ const PhotocopyPage = () => {
     return true;
   };
 
+  // Función para manejar las animaciones de las filas
+  const handleRowAnimation = (id, operation) => {
+    setAnimatedRows(prev => new Set([...prev, id]));
+    setLastOperation(operation);
+    setTimeout(() => {
+      setAnimatedRows(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
+    }, 500);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -239,15 +257,17 @@ const PhotocopyPage = () => {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error('Error al guardar');
       }
 
+      const data = await response.json();
       await fetchPhotocopies();
       resetForm();
+      handleRowAnimation(data.id, editingPhotocopy ? 'update' : 'add');
       showToastMessage(editingPhotocopy ? 'Registro actualizado correctamente' : 'Registro creado correctamente');
     } catch (error) {
       console.error('Error:', error);
-      alert('Error al guardar el registro');
+      showToastMessage(error.message || 'Error al guardar el registro', 'error');
     } finally {
       setLoading(false);
     }
@@ -296,6 +316,8 @@ const PhotocopyPage = () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
+      handleRowAnimation(id, 'delete');
+      
       const response = await fetch(`${API_URL}/photocopies/${id}`, {
         method: 'DELETE',
         headers: {
@@ -305,16 +327,10 @@ const PhotocopyPage = () => {
       });
 
       if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error('No tiene autorización. Por favor, inicie sesión nuevamente.');
-        }
-        throw new Error('Error al eliminar el registro');
+        throw new Error('Error al eliminar');
       }
 
-      // Primero cerramos el modal con animación
       handleCloseModal();
-      
-      // Luego actualizamos los datos y mostramos el mensaje
       await fetchPhotocopies();
       showToastMessage('Registro eliminado exitosamente', 'success');
     } catch (error) {
@@ -366,620 +382,724 @@ const PhotocopyPage = () => {
   const currentItems = filteredPhotocopies.slice(indexOfFirstItem, indexOfLastItem);
   const totalPages = Math.ceil(filteredPhotocopies.length / itemsPerPage);
 
-  return (
-    <div className="max-w-7xl mx-auto p-6 bg-gray-50 min-h-screen">
-      {/* Encabezado */}
-      <div className="bg-gradient-to-r from-teal-600 to-teal-700 rounded-lg shadow-lg p-6 mb-6">
-        <h1 className="text-3xl font-bold text-white flex items-center">
-          <FaCopy className="mr-3" />
-          Gestión de Fotocopias
-        </h1>
-        <p className="text-teal-100 mt-2">Registro y control de impresiones y fotocopias</p>
-      </div>
+  // Estilos CSS para animaciones
+  const styles = {
+    '@keyframes fadeInTableRow': {
+      from: {
+        opacity: 0,
+        transform: 'translateY(10px)'
+      },
+      to: {
+        opacity: 1,
+        transform: 'translateY(0)'
+      }
+    },
+    '@keyframes fadeInTableRowStaggered': {
+      '0%': {
+        opacity: 0,
+        transform: 'translateY(10px)'
+      },
+      '100%': {
+        opacity: 1,
+        transform: 'translateY(0)'
+      }
+    },
+    '@keyframes fadeOutTableRow': {
+      from: {
+        opacity: 1,
+        transform: 'translateY(0)'
+      },
+      to: {
+        opacity: 0,
+        transform: 'translateY(-10px)'
+      }
+    },
+    '@keyframes scaleInRow': {
+      from: {
+        opacity: 0,
+        transform: 'scale(0.95)'
+      },
+      to: {
+        opacity: 1,
+        transform: 'scale(1)'
+      }
+    },
+    'animateTableRowIn': {
+      animation: 'fadeInTableRow 0.5s ease-out forwards'
+    },
+    'animateTableRowStaggered': {
+      animation: 'fadeInTableRowStaggered 0.4s ease-out forwards'
+    },
+    'animateTableRowOut': {
+      animation: 'fadeOutTableRow 0.3s ease-out forwards'
+    },
+    'animateTableRowUpdate': {
+      animation: 'scaleInRow 0.4s ease-out forwards',
+      backgroundColor: 'rgba(20, 184, 166, 0.1)'
+    }
+  };
 
-      {/* Formulario para Agregar/Editar Fotocopia */}
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
-          {editingPhotocopy ? (
-            <>
-              <FaEdit className="mr-2 text-teal-600" />
-              Editar Registro
-            </>
-          ) : (
-            <>
-              
-            </>
-          )}
-        </h3>
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  return (
+    <div className="flex flex-col min-h-screen">
+      <div className="max-w-7xl mx-auto p-6 w-full">
+        {/* Encabezado */}
+        <div className="bg-gradient-to-r from-teal-600 to-teal-700 rounded-lg shadow-lg p-6 mb-6">
+          <h1 className="text-3xl font-bold text-white flex items-center">
+            <FaCopy className="mr-3" />
+            Gestión de Fotocopias
+          </h1>
+          <p className="text-teal-100 mt-2">Registro y control de impresiones y fotocopias</p>
+        </div>
+
+        {/* Formulario para Agregar/Editar Fotocopia */}
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6 relative z-10">
+          <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+            {editingPhotocopy ? (
+              <>
+                <FaEdit className="mr-2 text-teal-600" />
+                Editar Registro
+              </>
+            ) : (
+              <>
+                
+              </>
+            )}
+          </h3>
+          
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Cantidad (Copias/Impresiones) *
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={photocopyData.cantidad}
+                  onChange={(e) => setPhotocopyData(prev => ({ ...prev, cantidad: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  placeholder="Ej: 10"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Tipo de Impresión *
+                </label>
+                <select
+                  value={photocopyData.tipo}
+                  onChange={(e) => setPhotocopyData(prev => ({ ...prev, tipo: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
+                >
+                  <option value="bn">Blanco y Negro</option>
+                  <option value="color">Color</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={photocopyData.doble_hoja}
+                  onChange={(e) => setPhotocopyData(prev => ({ ...prev, doble_hoja: e.target.checked }))}
+                  className="rounded border-gray-300 text-teal-600 shadow-sm focus:border-teal-300 focus:ring focus:ring-teal-200 focus:ring-opacity-50"
+                />
+                <span className="ml-2 text-sm text-gray-700">
+                  Doble cara 
+                </span>
+              </label>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Cantidad (Copias/Impresiones) *
+                Descripción *
               </label>
-              <input
-                type="number"
-                min="1"
-                value={photocopyData.cantidad}
-                onChange={(e) => setPhotocopyData(prev => ({ ...prev, cantidad: e.target.value }))}
+              <textarea
+                value={photocopyData.comentario}
+                onChange={(e) => setPhotocopyData(prev => ({ ...prev, comentario: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
-                placeholder="Ej: 10"
+                rows="3"
+                placeholder="Ej: Lenguaje, Diagnóstico..."
                 required
               />
+              <p className="text-xs text-gray-500 mt-1">
+                Describe qué se está imprimiendo o fotocopiando
+              </p>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Tipo de Impresión *
-              </label>
-              <select
-                value={photocopyData.tipo}
-                onChange={(e) => setPhotocopyData(prev => ({ ...prev, tipo: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
-              >
-                <option value="bn">Blanco y Negro</option>
-                <option value="color">A Color</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={photocopyData.doble_hoja}
-                onChange={(e) => setPhotocopyData(prev => ({ ...prev, doble_hoja: e.target.checked }))}
-                className="rounded border-gray-300 text-teal-600 shadow-sm focus:border-teal-300 focus:ring focus:ring-teal-200 focus:ring-opacity-50"
-              />
-              <span className="ml-2 text-sm text-gray-700">
-                Doble cara (utiliza más hojas)
-              </span>
-            </label>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Descripción *
-            </label>
-            <textarea
-              value={photocopyData.comentario}
-              onChange={(e) => setPhotocopyData(prev => ({ ...prev, comentario: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
-              rows="3"
-              placeholder="Ej: Lenguaje, Diagnóstico..."
-              required
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Describe qué se está imprimiendo o fotocopiando
-            </p>
-          </div>
-
-          <div className="flex justify-end space-x-3 pt-4">
-            {editingPhotocopy && (
-              <button
-                type="button"
-                onClick={cancelEdit}
-                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors duration-200"
-              >
-                Cancelar Edición
-              </button>
-            )}
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 disabled:opacity-50 transition-colors duration-200 flex items-center"
-            >
-              {loading ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  Guardando...
-                </>
-              ) : editingPhotocopy ? (
-                <>
-                  <FaEdit className="mr-2" />
-                  Actualizar
-                </>
-              ) : (
-                <>
-                  <FaPlus className="mr-2" />
-                  Agregar Registro
-                </>
+            <div className="flex justify-end space-x-3 pt-4">
+              {editingPhotocopy && (
+                <button
+                  type="button"
+                  onClick={cancelEdit}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors duration-200"
+                >
+                  Cancelar Edición
+                </button>
               )}
-            </button>
-          </div>
-        </form>
-      </div>
-
-      {/* Estadísticas */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex items-center">
-            <div className="p-3 bg-teal-100 rounded-full">
-              <FaClipboardList className="text-teal-600 text-xl" />
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 disabled:opacity-50 transition-colors duration-200 flex items-center"
+              >
+                {loading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Guardando...
+                  </>
+                ) : editingPhotocopy ? (
+                  <>
+                    <FaEdit className="mr-2" />
+                    Actualizar
+                  </>
+                ) : (
+                  <>
+                    <FaPlus className="mr-2" />
+                    Agregar Registro
+                  </>
+                )}
+              </button>
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Total Impresiones</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.totalCopies}</p>
+          </form>
+        </div>
+
+        {/* Estadísticas */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-6 relative z-10">
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="flex items-center">
+              <div className="p-3 bg-teal-100 rounded-full">
+                <FaClipboardList className="text-teal-600 text-xl" />
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-600">Total Impresiones</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.totalCopies}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="flex items-center">
+              <div className="p-3 bg-blue-100 rounded-full">
+                <FaFileAlt className="text-blue-600 text-xl" />
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-600">Hojas Gastadas</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.totalSheets}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="flex items-center">
+              <div className="p-3 bg-gray-100 rounded-full">
+                <FaPrint className="text-gray-600 text-xl" />
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-600">Impresiones B/N</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.totalBN}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="flex items-center">
+              <div className="p-3 bg-red-100 rounded-full">
+                <FaPalette className="text-red-600 text-xl" />
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-600">Impresiones Color</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.totalColor}</p>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex items-center">
-            <div className="p-3 bg-blue-100 rounded-full">
-              <FaFileAlt className="text-blue-600 text-xl" />
+        {/* Filtros y Controles */}
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6 relative z-10">
+          {/* Filtros de período - Botones centrados */}
+          <div className="mb-6">
+            <h3 className="text-lg font-medium text-gray-900 mb-4 text-center">Filtrar por Período</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 mb-4">
+              <button
+                onClick={() => setFilterPeriod('hoy')}
+                className={`px-4 py-2 text-sm md:text-base rounded-lg font-medium transition-colors duration-200 ${
+                  filterPeriod === 'hoy'
+                    ? 'bg-teal-500 text-white shadow-md'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                HOY
+              </button>
+              <button
+                onClick={() => setFilterPeriod('semana')}
+                className={`px-4 py-2 text-sm md:text-base rounded-lg font-medium transition-colors duration-200 ${
+                  filterPeriod === 'semana'
+                    ? 'bg-teal-500 text-white shadow-md'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                SEMANA
+              </button>
+              <button
+                onClick={() => setFilterPeriod('mes')}
+                className={`px-4 py-2 text-sm md:text-base rounded-lg font-medium transition-colors duration-200 ${
+                  filterPeriod === 'mes'
+                    ? 'bg-teal-500 text-white shadow-md'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                MES
+              </button>
+              <button
+                onClick={() => setFilterPeriod('personalizado')}
+                className={`px-4 py-2 text-sm md:text-base rounded-lg font-medium transition-colors duration-200 group relative ${
+                  filterPeriod === 'personalizado'
+                    ? 'bg-teal-500 text-white shadow-md'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                <span className="hidden lg:inline">PERSONALIZADO</span>
+                <span className="lg:hidden md:inline">PERS.</span>
+                <span className="absolute left-1/2 transform -translate-x-1/2 -top-8 bg-gray-900 text-white px-2 py-1 rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none lg:hidden">
+                  PERSONALIZADO
+                </span>
+              </button>
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Hojas Gastadas</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.totalSheets}</p>
-            </div>
-          </div>
-        </div>
 
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex items-center">
-            <div className="p-3 bg-gray-100 rounded-full">
-              <FaPrint className="text-gray-600 text-xl" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Impresiones B/N</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.totalBN}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex items-center">
-            <div className="p-3 bg-red-100 rounded-full">
-              <FaPalette className="text-red-600 text-xl" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Impresiones Color</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.totalColor}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filtros y Controles */}
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        {/* Filtros de período - Botones centrados */}
-        <div className="mb-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4 text-center">Filtrar por Período</h3>
-          <div className="flex justify-center space-x-4 mb-4">
-            <button
-              onClick={() => setFilterPeriod('hoy')}
-              className={`px-6 py-2 rounded-lg font-medium transition-colors duration-200 ${
-                filterPeriod === 'hoy'
-                  ? 'bg-teal-500 text-white shadow-md'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              HOY
-            </button>
-            <button
-              onClick={() => setFilterPeriod('semana')}
-              className={`px-6 py-2 rounded-lg font-medium transition-colors duration-200 ${
-                filterPeriod === 'semana'
-                  ? 'bg-teal-500 text-white shadow-md'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              SEMANA
-            </button>
-            <button
-              onClick={() => setFilterPeriod('mes')}
-              className={`px-6 py-2 rounded-lg font-medium transition-colors duration-200 ${
-                filterPeriod === 'mes'
-                  ? 'bg-teal-500 text-white shadow-md'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              MES
-            </button>
-            <button
-              onClick={() => setFilterPeriod('personalizado')}
-              className={`px-6 py-2 rounded-lg font-medium transition-colors duration-200 ${
+            {/* Campos de fecha personalizada */}
+            <div 
+              className={`grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md mx-auto overflow-hidden transition-all duration-300 ease-in-out ${
                 filterPeriod === 'personalizado'
-                  ? 'bg-teal-500 text-white shadow-md'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  ? 'max-h-[200px] opacity-100 mt-4'
+                  : 'max-h-0 opacity-0 -mt-4'
               }`}
             >
-              PERSONALIZADO
-            </button>
-          </div>
-
-          {/* Campos de fecha personalizada - Solo se muestran cuando se selecciona "personalizado" */}
-          {filterPeriod === 'personalizado' && (
-            <div className="flex justify-center space-x-4">
               <div className="flex flex-col">
                 <label className="text-sm font-medium text-gray-700 mb-1">Desde</label>
                 <input
-                  type="date"
-                  value={customDateFrom}
-                  onChange={(e) => setCustomDateFrom(e.target.value)}
-                  max={customDateTo || undefined}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                />
+                    type="date"
+                    value={customDateFrom}
+                    onChange={(e) => setCustomDateFrom(e.target.value)}
+                    max={customDateTo || undefined}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  />
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-sm font-medium text-gray-700 mb-1">Hasta</label>
+                  <input
+                    type="date"
+                    value={customDateTo}
+                    onChange={(e) => setCustomDateTo(e.target.value)}
+                    min={customDateFrom || undefined}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  />
+                </div>
               </div>
-              <div className="flex flex-col">
-                <label className="text-sm font-medium text-gray-700 mb-1">Hasta</label>
-                <input
-                  type="date"
-                  value={customDateTo}
-                  onChange={(e) => setCustomDateTo(e.target.value)}
-                  min={customDateFrom || undefined}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                />
-              </div>
+            
+          </div>
+
+          {/* Barra de búsqueda */}
+          <div className="flex justify-center">
+            <div className="relative w-full max-w-md">
+              <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Buscar por descripción, Tipo, Cantidad o Fechas ..."
+                value={searchTerm}
+                onChange={(e) => {
+                  const value = e.target.value.trim();
+                  setSearchTerm(value);
+                  // El filtrado se maneja automáticamente por el useEffect
+                }}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors duration-200"
+                >
+                  <FaTimes className="h-4 w-4" />
+                </button>
+              )}
             </div>
-          )}
-        </div>
-
-        {/* Barra de búsqueda */}
-        <div className="flex justify-center">
-          <div className="relative w-full max-w-md">
-            <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Buscar por descripción, nombre de usuario o grupo..."
-              value={searchTerm}
-              onChange={(e) => {
-                const value = e.target.value.trim();
-                setSearchTerm(value);
-                // El filtrado se maneja automáticamente por el useEffect
-              }}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-            />
-            {searchTerm && (
-              <button
-                onClick={() => setSearchTerm('')}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors duration-200"
-              >
-                <FaTimes className="h-4 w-4" />
-              </button>
-            )}
           </div>
         </div>
-      </div>
 
-      {/* Tabla de Fotocopias */}
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        {loading ? (
-          <div className="flex justify-center items-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600"></div>
-          </div>
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Fecha
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Usuario
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Cantidad
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Tipo
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Doble Cara
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Descripción
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {currentItems.length === 0 ? (
+        {/* Tabla de Fotocopias */}
+        <div className="bg-white rounded-lg shadow-md overflow-hidden relative z-10">
+          {loading ? (
+            <div className="flex justify-center items-center h-64">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600"></div>
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
                     <tr>
-                      <td colSpan="7" className="px-6 py-8 text-center">
-                        <div className="text-gray-500">
-                          <FaClipboardList className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-                          <p>No hay registros de fotocopias para mostrar</p>
-                        </div>
-                      </td>
+                      <th className="px-2 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Fecha
+                      </th>
+                      <th className="px-2 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">
+                        Usuario
+                      </th>
+                      <th className="px-2 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Cant.
+                      </th>
+                      <th className="px-2 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Tipo
+                      </th>
+                      <th className="px-2 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">
+                        Doble
+                      </th>
+                      <th className="px-2 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Desc.
+                      </th>
                     </tr>
-                  ) : (
-                    currentItems.map((photocopy) => (
-                      <tr 
-                        key={photocopy.id} 
-                        onClick={() => handleRowClick(photocopy)}
-                        className="hover:bg-gray-50 transition-all duration-150 cursor-pointer transform hover:scale-[1.01]"
-                      >
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {formatDate(photocopy.registrado_en)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex flex-col">
-                            <div className="text-sm font-medium text-gray-900">
-                              {photocopy.usuario_nombre}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              {photocopy.grupo_nombre}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900 font-medium">
-                            {photocopy.cantidad}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {photocopy.doble_hoja ? `${Math.ceil(photocopy.cantidad / 2)} hojas` : `${photocopy.cantidad} hojas`}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            photocopy.tipo === 'bn' ? 'bg-gray-100 text-gray-800' : 'bg-red-100 text-red-800'
-                          }`}>
-                            {photocopy.tipo === 'bn' ? (
-                              <>
-                                <FaPrint className="mr-1" />
-                                B/N
-                              </>
-                            ) : (
-                              <>
-                                <FaPalette className="mr-1" />
-                                Color
-                              </>
-                            )}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          {photocopy.doble_hoja ? (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                              <FaCheckCircle className="mr-1" />
-                              Sí
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                              <FaTimes className="mr-1" />
-                              No
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm text-gray-900 max-w-xs truncate" title={photocopy.comentario}>
-                            {photocopy.comentario}
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {currentItems.length === 0 ? (
+                      <tr>
+                        <td colSpan="7" className="px-2 sm:px-6 py-4 sm:py-8 text-center">
+                          <div className="text-gray-500">
+                            <FaClipboardList className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                            <p>No hay registros de fotocopias para mostrar</p>
                           </div>
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Paginación */}
-            {totalPages > 1 && (
-              <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
-                <div className="flex-1 flex justify-between sm:hidden">
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                    disabled={currentPage === 1}
-                    className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    Anterior
-                  </button>
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                    disabled={currentPage === totalPages}
-                    className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    Siguiente
-                  </button>
-                </div>
-                <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm text-gray-700">
-                      Mostrando <span className="font-medium">{indexOfFirstItem + 1}</span> a{' '}
-                      <span className="font-medium">{Math.min(indexOfLastItem, filteredPhotocopies.length)}</span> de{' '}
-                      <span className="font-medium">{filteredPhotocopies.length}</span> resultados
-                    </p>
-                  </div>
-                  <div>
-                    <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
-                      {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                        <button
-                          key={page}
-                          onClick={() => setCurrentPage(page)}
-                          className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
-                            page === currentPage
-                              ? 'z-10 bg-teal-50 border-teal-500 text-teal-600'
-                              : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
-                          }`}
+                    ) : (
+                      currentItems.map((photocopy, index) => (
+                        <tr 
+                          key={photocopy.id} 
+                          onClick={() => handleRowClick(photocopy)}
+                          className="hover:bg-teal-50/70 transition-all duration-150 cursor-pointer"
+                          style={{
+                            ...animatedRows.has(photocopy.id) 
+                              ? lastOperation === 'delete' 
+                                ? styles.animateTableRowOut
+                                : lastOperation === 'update'
+                                  ? styles.animateTableRowUpdate
+                                  : styles.animateTableRowIn
+                              : index % 2 === 0 
+                                ? styles.animateTableRowIn 
+                                : styles.animateTableRowStaggered,
+                            animationDelay: `${index * 0.05}s`
+                          }}
                         >
-                          {page}
-                        </button>
+                          <td className="px-2 sm:px-6 py-2 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900">
+                            {formatDate(photocopy.registrado_en)}
+                          </td>
+                          <td className="px-2 sm:px-6 py-2 sm:py-4 whitespace-nowrap hidden sm:table-cell">
+                            <div className="flex flex-col">
+                              <div className="text-xs sm:text-sm font-medium text-gray-900">
+                                {photocopy.usuario_nombre}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {photocopy.grupo_nombre}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-2 sm:px-6 py-2 sm:py-4 whitespace-nowrap">
+                            <div className="text-xs sm:text-sm text-gray-900 font-medium">
+                              {photocopy.cantidad}
+                            </div>
+                            <div className="text-xs text-gray-500 hidden sm:block">
+                              {photocopy.doble_hoja ? `${Math.ceil(photocopy.cantidad / 2)} hojas` : `${photocopy.cantidad} hojas`}
+                            </div>
+                          </td>
+                          <td className="px-2 sm:px-6 py-2 sm:py-4 whitespace-nowrap">
+                            <span className={`inline-flex items-center px-1.5 sm:px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              photocopy.tipo === 'bn' ? 'bg-gray-100 text-gray-800' : 'bg-red-100 text-red-800'
+                            }`}>
+                              {photocopy.tipo === 'bn' ? (
+                                <>
+                                  <FaPrint className="mr-1" />
+                                  <span className="hidden sm:inline">B/N</span>
+                                  <span className="sm:hidden">B</span>
+                                </>
+                              ) : (
+                                <>
+                                  <FaPalette className="mr-1" />
+                                  <span className="hidden sm:inline">Color</span>
+                                  <span className="sm:hidden">C</span>
+                                </>
+                              )}
+                            </span>
+                          </td>
+                          <td className="px-2 sm:px-6 py-2 sm:py-4 whitespace-nowrap hidden sm:table-cell">
+                            {photocopy.doble_hoja ? (
+                              <span className="inline-flex items-center px-1.5 sm:px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                <FaCheckCircle className="mr-1" />
+                                Sí
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-1.5 sm:px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                <FaTimes className="mr-1" />
+                                No
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-2 sm:px-6 py-2 sm:py-4">
+                            <div className="text-xs sm:text-sm text-gray-900 max-w-[100px] sm:max-w-xs truncate" title={photocopy.comentario}>
+                              {photocopy.comentario}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Paginación */}
+              <div className="bg-white px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-gray-200">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="itemsPerPage" className="text-sm text-gray-700">
+                      Mostrar:
+                    </label>
+                    <select
+                      id="itemsPerPage"
+                      value={itemsPerPage}
+                      onChange={(e) => {
+                        setItemsPerPage(Number(e.target.value));
+                        setCurrentPage(1);
+                      }}
+                      className="text-sm border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    >
+                      {itemsPerPageOptions.map(option => (
+                        <option key={option} value={option}>{option}</option>
                       ))}
-                    </nav>
+                    </select>
                   </div>
+                  
+                  <span className="text-sm text-gray-700">
+                    Mostrando <span className="font-medium">{indexOfFirstItem + 1}</span> a{' '}
+                    <span className="font-medium">{Math.min(indexOfLastItem, filteredPhotocopies.length)}</span> de{' '}
+                    <span className="font-medium">{filteredPhotocopies.length}</span> registros
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <div className="flex rounded-md shadow-sm">
+                    <button
+                      onClick={() => setCurrentPage(1)}
+                      disabled={currentPage === 1}
+                      className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-teal-500 focus:border-teal-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <span className="sr-only">Primera página</span>
+                      ««
+                    </button>
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1}
+                      className="relative inline-flex items-center px-2 py-2 border-t border-b border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-teal-500 focus:border-teal-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <span className="sr-only">Anterior</span>
+                      «
+                    </button>
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage === totalPages}
+                      className="relative inline-flex items-center px-2 py-2 border-t border-b border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-teal-500 focus:border-teal-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <span className="sr-only">Siguiente</span>
+                      »
+                    </button>
+                    <button
+                      onClick={() => setCurrentPage(totalPages)}
+                      disabled={currentPage === totalPages}
+                      className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:z-10 focus:outline-none focus:ring-1 focus:ring-teal-500 focus:border-teal-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <span className="sr-only">Última página</span>
+                      »»
+                    </button>
+                  </div>
+                  <span className="text-sm text-gray-700 whitespace-nowrap">
+                    Página <span className="font-medium">{currentPage}</span> de <span className="font-medium">{totalPages}</span>
+                  </span>
                 </div>
               </div>
-            )}
-          </>
-        )}
-      </div>
+            </>
+          )}
+        </div>
 
-      {/* Modal de edición */}
-      {showModal && (
-        <div className={`fixed inset-0 z-50 overflow-y-auto`}>
-          <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div 
-              className={`fixed inset-0 bg-gray-500 transition-opacity duration-300 ease-out ${
-                modalAnimating ? 'bg-opacity-75' : 'bg-opacity-0'
-              }`} 
-              onClick={handleCloseModal}
-            />
+        {/* Modal de edición */}
+        {showModal && (
+          <div className={`fixed inset-0 z-50 overflow-y-auto`}>
+            <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+              <div 
+                className={`fixed inset-0 bg-gray-500 transition-opacity duration-300 ease-out ${
+                  modalAnimating ? 'bg-opacity-75' : 'bg-opacity-0'
+                }`} 
+                onClick={handleCloseModal}
+              />
 
-            <div className={`inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all duration-300 ease-out sm:my-8 sm:align-middle sm:max-w-lg sm:w-full ${
-              modalAnimating ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
-            }`}>
-              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                <div className="sm:flex sm:items-start">
-                  <div className="mt-3 text-center sm:mt-0 sm:text-left w-full">
-                    <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-                      Editar Registro de Fotocopia
-                    </h3>
-                    <div className="mt-2 space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Cantidad
-                        </label>
-                        <input
-                          type="number"
-                          value={editingPhotocopy?.cantidad || ''}
-                          onChange={(e) => setEditingPhotocopy({
-                            ...editingPhotocopy,
-                            cantidad: parseInt(e.target.value)
-                          })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Tipo
-                        </label>
-                        <div className="flex space-x-4">
-                          <label className="inline-flex items-center">
-                            <input
-                              type="radio"
-                              checked={editingPhotocopy?.tipo === 'bn'}
-                              onChange={() => setEditingPhotocopy({
-                                ...editingPhotocopy,
-                                tipo: 'bn'
-                              })}
-                              className="form-radio h-4 w-4 text-teal-600"
-                            />
-                            <span className="ml-2">B/N</span>
+              <div className={`inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all duration-300 ease-out sm:my-8 sm:align-middle sm:max-w-lg sm:w-full ${
+                modalAnimating ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
+              }`}>
+                <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                  <div className="sm:flex sm:items-start">
+                    <div className="mt-3 text-center sm:mt-0 sm:text-left w-full">
+                      <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
+                        Editar Registro de Fotocopia
+                      </h3>
+                      <div className="mt-2 space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Cantidad
                           </label>
-                          <label className="inline-flex items-center">
-                            <input
-                              type="radio"
-                              checked={editingPhotocopy?.tipo === 'color'}
-                              onChange={() => setEditingPhotocopy({
-                                ...editingPhotocopy,
-                                tipo: 'color'
-                              })}
-                              className="form-radio h-4 w-4 text-teal-600"
-                            />
-                            <span className="ml-2">Color</span>
-                          </label>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Doble Cara
-                        </label>
-                        <label className="inline-flex items-center">
                           <input
-                            type="checkbox"
-                            checked={editingPhotocopy?.doble_hoja || false}
+                            type="number"
+                            value={editingPhotocopy?.cantidad || ''}
                             onChange={(e) => setEditingPhotocopy({
                               ...editingPhotocopy,
-                              doble_hoja: e.target.checked
+                              cantidad: parseInt(e.target.value)
                             })}
-                            className="form-checkbox h-4 w-4 text-teal-600"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                           />
-                          <span className="ml-2">Impresión a doble cara</span>
-                        </label>
-                      </div>
+                        </div>
 
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Descripción
-                        </label>
-                        <textarea
-                          value={editingPhotocopy?.comentario || ''}
-                          onChange={(e) => setEditingPhotocopy({
-                            ...editingPhotocopy,
-                            comentario: e.target.value
-                          })}
-                          rows="3"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                        />
-                      </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Tipo
+                          </label>
+                          <div className="flex space-x-4">
+                            <label className="inline-flex items-center">
+                              <input
+                                type="radio"
+                                checked={editingPhotocopy?.tipo === 'bn'}
+                                onChange={() => setEditingPhotocopy({
+                                  ...editingPhotocopy,
+                                  tipo: 'bn'
+                                })}
+                                className="form-radio h-4 w-4 text-teal-600"
+                              />
+                              <span className="ml-2">B/N</span>
+                            </label>
+                            <label className="inline-flex items-center">
+                              <input
+                                type="radio"
+                                checked={editingPhotocopy?.tipo === 'color'}
+                                onChange={() => setEditingPhotocopy({
+                                  ...editingPhotocopy,
+                                  tipo: 'color'
+                                })}
+                                className="form-radio h-4 w-4 text-teal-600"
+                              />
+                              <span className="ml-2">Color</span>
+                            </label>
+                          </div>
+                        </div>
 
-                      {/* Fecha - Solo visible */}
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Fecha de Registro
-                        </label>
-                        <p className="text-sm text-gray-600">
-                          {formatDate(editingPhotocopy?.registrado_en)}
-                        </p>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Doble Cara
+                          </label>
+                          <label className="inline-flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={editingPhotocopy?.doble_hoja || false}
+                              onChange={(e) => setEditingPhotocopy({
+                                ...editingPhotocopy,
+                                doble_hoja: e.target.checked
+                              })}
+                              className="form-checkbox h-4 w-4 text-teal-600"
+                            />
+                            <span className="ml-2">Impresión a doble cara</span>
+                          </label>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Descripción
+                          </label>
+                          <textarea
+                            value={editingPhotocopy?.comentario || ''}
+                            onChange={(e) => setEditingPhotocopy({
+                              ...editingPhotocopy,
+                              comentario: e.target.value
+                            })}
+                            rows="3"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                          />
+                        </div>
+
+                        {/* Fecha - Solo visible */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Fecha de Registro
+                          </label>
+                          <p className="text-sm text-gray-600">
+                            {formatDate(editingPhotocopy?.registrado_en)}
+                          </p>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
-              </div>
-              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                <button
-                  type="button"
-                  onClick={handleUpdate}
-                  disabled={loading}
-                  className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-teal-600 text-base font-medium text-white hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50"
-                >
-                  {loading ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                      Guardando...
-                    </>
-                  ) : (
-                    'Guardar Cambios'
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCloseModal}
-                  className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 sm:mt-0 sm:w-auto sm:text-sm"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(editingPhotocopy.id)}
-                  className="mt-3 w-full inline-flex justify-center rounded-md border border-red-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-red-700 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:mt-0 sm:w-auto sm:text-sm"
-                >
-                  Eliminar
-                </button>
+                <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                  <button
+                    type="button"
+                    onClick={handleUpdate}
+                    disabled={loading}
+                    className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-teal-600 text-base font-medium text-white hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50"
+                  >
+                    {loading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Guardando...
+                      </>
+                    ) : (
+                      'Guardar Cambios'
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCloseModal}
+                    className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 sm:mt-0 sm:w-auto sm:text-sm"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(editingPhotocopy.id)}
+                    className="mt-3 w-full inline-flex justify-center rounded-md border border-red-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-red-700 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:mt-0 sm:w-auto sm:text-sm"
+                  >
+                    Eliminar
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Toast para mensajes */}
-      {showToast && (
-        <div className={`fixed top-5 right-5 max-w-sm w-full bg-white rounded-lg shadow-lg p-4 transition-all duration-300 transform ${
-          showToast ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0'
-        }`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              {toastType === 'success' ? (
-                <FaCheckCircle className="text-green-500 mr-3" />
-              ) : (
-                <FaTimes className="text-red-500 mr-3" />
-              )}
-              <p className="text-sm font-medium text-gray-900">{toastMessage}</p>
+        {/* Toast para mensajes */}
+        {showToast && (
+          <div className={`fixed top-5 right-5 max-w-sm w-full bg-white rounded-lg shadow-lg p-4 transition-all duration-300 transform ${
+            showToast ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                {toastType === 'success' ? (
+                  <FaCheckCircle className="text-green-500 mr-3" />
+                ) : (
+                  <FaTimes className="text-red-500 mr-3" />
+                )}
+                <p className="text-sm font-medium text-gray-900">{toastMessage}</p>
+              </div>
+              <button
+                onClick={() => setShowToast(false)}
+                className="ml-4 text-gray-400 hover:text-gray-600 transition-colors duration-200"
+              >
+                <FaTimes className="h-4 w-4" />
+              </button>
             </div>
-            <button
-              onClick={() => setShowToast(false)}
-              className="ml-4 text-gray-400 hover:text-gray-600 transition-colors duration-200"
-            >
-              <FaTimes className="h-4 w-4" />
-            </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

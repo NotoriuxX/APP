@@ -4,7 +4,8 @@
 
 html, body, #root {
   height: 100%;
-  background-color: #f3f4f6; /* bg-gray-100 */
+  min-height: 100vh;
+  background-color: #F8F9FA;
 }
 /* ✅ Borde para el checkbox cuando está inactivo */
 .p-checkbox-box {

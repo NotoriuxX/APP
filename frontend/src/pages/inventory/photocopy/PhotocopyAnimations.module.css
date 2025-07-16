@@ -192,6 +192,7 @@
   transition: all 0.3s ease-in-out;
 }
 
+
 .photocopy-filtering-state {
   opacity: 0.8;
   pointer-events: none;
