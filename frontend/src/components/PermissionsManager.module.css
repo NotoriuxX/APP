@@ -1,0 +1,145 @@
+.permissionsContainer {
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.moduleCard {
+  background: white;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.moduleCard:hover {
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.moduleHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  cursor: pointer;
+  background-color: #ffffff;
+  border-bottom: 1px solid #eee;
+  transition: background-color 0.3s ease;
+}
+
+.moduleHeader:hover {
+  background-color: #f5f5f5;
+}
+
+.moduleTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  color: #333;
+}
+
+.moduleIcon {
+  font-size: 1.2rem;
+  color: #666;
+}
+
+.moduleControls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.toggleButton {
+  background: transparent;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 0.25rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.toggleButton:hover {
+  background-color: #f0f0f0;
+  border-color: #ccc;
+}
+
+.check {
+  font-size: 1rem;
+  color: #ccc;
+}
+
+.checkSelected {
+  font-size: 1rem;
+  color: #4CAF50;
+}
+
+.permissionsList {
+  overflow: hidden;
+  background-color: #fafafa;
+}
+
+.permissionItem {
+  padding: 0.75rem 1rem 0.75rem 2rem;
+  border-bottom: 1px solid #eee;
+  transition: background-color 0.2s ease;
+}
+
+.permissionItem:last-child {
+  border-bottom: none;
+}
+
+.permissionItem:hover {
+  background-color: #f5f5f5;
+}
+
+.permissionLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  color: #555;
+}
+
+.permissionCheckbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #4CAF50;
+}
+
+/* Animaciones */
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
+.animate-slide-down {
+  animation: slideDown 0.3s ease forwards;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease forwards;
+}

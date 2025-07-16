@@ -1,0 +1,100 @@
+/* Estilos CSS personalizados para animaciones suaves */
+@keyframes gentle-bounce {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@keyframes fadeInSlideLeft {
+  0% { 
+    opacity: 0; 
+    transform: translateX(-20px) scale(0.9); 
+  }
+  100% { 
+    opacity: 1; 
+    transform: translateX(0) scale(1); 
+  }
+}
+
+@keyframes fadeInSlideRight {
+  0% { 
+    opacity: 0; 
+    transform: translateX(20px) scale(0.9); 
+  }
+  100% { 
+    opacity: 1; 
+    transform: translateX(0) scale(1); 
+  }
+}
+
+@keyframes fadeInSlideUp {
+  0% { 
+    opacity: 0; 
+    transform: translateY(10px) scale(0.95); 
+  }
+  100% { 
+    opacity: 1; 
+    transform: translateY(0) scale(1); 
+  }
+}
+
+@keyframes fadeOutSlideDown {
+  0% { 
+    opacity: 1; 
+    transform: translateY(0) scale(1); 
+  }
+  100% { 
+    opacity: 0; 
+    transform: translateY(10px) scale(0.95); 
+  }
+}
+
+@keyframes fadeInTableRow {
+  0% { 
+    opacity: 0; 
+    transform: translateY(-10px) scale(0.98); 
+  }
+  100% { 
+    opacity: 1; 
+    transform: translateY(0) scale(1); 
+  }
+}
+
+@keyframes fadeInTableRowStaggered {
+  0% { 
+    opacity: 0; 
+    transform: translateY(-8px) scale(0.99); 
+  }
+  100% { 
+    opacity: 1; 
+    transform: translateY(0) scale(1); 
+  }
+}
+
+.animate-fade-in-slide-left {
+  animation: fadeInSlideLeft 0.5s ease-out forwards;
+}
+
+.animate-fade-in-slide-right {
+  animation: fadeInSlideRight 0.6s ease-out 0.1s both;
+}
+
+.animate-fade-in-slide-up {
+  animation: fadeInSlideUp 0.4s ease-out forwards;
+}
+
+.animate-fade-out-slide-down {
+  animation: fadeOutSlideDown 0.3s ease-in forwards;
+}
+
+.animate-gentle-bounce {
+  animation: gentle-bounce 0.5s ease-out;
+}
+
+.animate-table-row-in {
+  animation: fadeInTableRow 0.5s ease-out forwards;
+}
+
+.animate-table-row-staggered {
+  animation: fadeInTableRowStaggered 0.4s ease-out forwards;
+}

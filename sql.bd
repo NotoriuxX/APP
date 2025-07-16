@@ -1,0 +1,210 @@
+-- 1) Tabla de grupos (empresas)
+CREATE TABLE IF NOT EXISTS grupos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(255),
+  descripcion TEXT
+) ENGINE=InnoDB;
+
+-- 2) Tabla de usuarios
+CREATE TABLE IF NOT EXISTS usuarios (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(255),
+  email VARCHAR(255),
+  rol ENUM('admin','tecnico','trabajador') DEFAULT 'trabajador',
+  password VARCHAR(255)
+) ENGINE=InnoDB;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_usuarios_email ON usuarios(email);
+
+-- 3) Tabla que relaciona usuarios con grupos
+CREATE TABLE IF NOT EXISTS usuarios_grupos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  usuario_id INT,
+  grupo_id INT,
+  FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
+  FOREIGN KEY (grupo_id) REFERENCES grupos(id)
+) ENGINE=InnoDB;
+
+-- 4) Tabla de departamentos
+CREATE TABLE IF NOT EXISTS departamentos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(255),
+  descripcion TEXT,
+  imagen_path VARCHAR(255),
+  grupo_id INT,
+  FOREIGN KEY (grupo_id) REFERENCES grupos(id)
+) ENGINE=InnoDB;
+
+-- 5) Tabla de trabajadores
+CREATE TABLE IF NOT EXISTS trabajadores (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(255),
+  apellido VARCHAR(255),
+  email VARCHAR(255),
+  rut VARCHAR(255),
+  departamento_id INT,
+  fecha_contratacion DATE,
+  activo BOOLEAN DEFAULT TRUE,
+  grupo_id INT,
+  FOREIGN KEY (departamento_id) REFERENCES departamentos(id),
+  FOREIGN KEY (grupo_id) REFERENCES grupos(id)
+) ENGINE=InnoDB;
+
+-- 6) Tabla de secciones
+CREATE TABLE IF NOT EXISTS secciones (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(255),
+  grupo_id INT,
+  posicion INT,
+  FOREIGN KEY (grupo_id) REFERENCES grupos(id)
+) ENGINE=InnoDB;
+
+-- 7) Tabla de permisos
+CREATE TABLE IF NOT EXISTS permisos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  usuario_id INT,
+  seccion_id INT,
+  FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
+  FOREIGN KEY (seccion_id) REFERENCES secciones(id)
+) ENGINE=InnoDB;
+
+-- 8) Tabla para definir los tipos de items
+CREATE TABLE IF NOT EXISTS tipos_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(255),
+  grupo_id INT,
+  FOREIGN KEY (grupo_id) REFERENCES grupos(id)
+) ENGINE=InnoDB;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_tipos_items_nombre_grupo 
+  ON tipos_items(nombre, grupo_id);
+
+-- 9) Tabla de estados posibles de los items
+CREATE TABLE IF NOT EXISTS estados_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(255),
+  descripcion TEXT,
+  grupo_id INT,
+  FOREIGN KEY (grupo_id) REFERENCES grupos(id)
+) ENGINE=InnoDB;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_estados_items_nombre_grupo 
+  ON estados_items(nombre, grupo_id);
+
+-- 10) Tabla de items
+CREATE TABLE IF NOT EXISTS items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tipo_id INT,
+  fecha_ingreso TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  estado_id INT,
+  trabajador_id INT,
+  seccion_id INT,
+  CCI VARCHAR(255),
+  grupo_id INT,
+  FOREIGN KEY (tipo_id) REFERENCES tipos_items(id),
+  FOREIGN KEY (estado_id) REFERENCES estados_items(id),
+  FOREIGN KEY (trabajador_id) REFERENCES trabajadores(id),
+  FOREIGN KEY (seccion_id) REFERENCES secciones(id),
+  FOREIGN KEY (grupo_id) REFERENCES grupos(id)
+) ENGINE=InnoDB;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_items_cci_grupo 
+  ON items(CCI, grupo_id);
+
+-- 11) Tabla de asignaciones
+CREATE TABLE IF NOT EXISTS asignaciones (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  item_id INT,
+  trabajador_id INT,
+  fecha_asignacion TIMESTAMP NULL,
+  fecha_devolucion TIMESTAMP NULL,
+  observaciones TEXT,
+  grupo_id INT,
+  FOREIGN KEY (item_id) REFERENCES items(id),
+  FOREIGN KEY (trabajador_id) REFERENCES trabajadores(id),
+  FOREIGN KEY (grupo_id) REFERENCES grupos(id)
+) ENGINE=InnoDB;
+
+-- 12) Tabla de mantenimientos
+CREATE TABLE IF NOT EXISTS mantenimientos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  item_id INT,
+  descripcion TEXT,
+  fecha TIMESTAMP NULL,
+  costo DECIMAL(10,2),
+  tecnico_id INT,
+  comentarios TEXT,
+  grupo_id INT,
+  FOREIGN KEY (item_id) REFERENCES items(id),
+  FOREIGN KEY (tecnico_id) REFERENCES usuarios(id),
+  FOREIGN KEY (grupo_id) REFERENCES grupos(id)
+) ENGINE=InnoDB;
+
+-- 13) Tabla de bajas
+CREATE TABLE IF NOT EXISTS bajas (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  item_id INT,
+  fecha_baja TIMESTAMP NULL,
+  razon TEXT,
+  valor_perdido DECIMAL(10,2),
+  autor_id INT,
+  grupo_id INT,
+  FOREIGN KEY (item_id) REFERENCES items(id),
+  FOREIGN KEY (autor_id) REFERENCES usuarios(id),
+  FOREIGN KEY (grupo_id) REFERENCES grupos(id)
+) ENGINE=InnoDB;
+
+-- 14) Tabla de comentarios
+CREATE TABLE IF NOT EXISTS comentarios (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  item_id INT,
+  autor_id INT,
+  comentario TEXT,
+  fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  grupo_id INT,
+  FOREIGN KEY (item_id) REFERENCES items(id),
+  FOREIGN KEY (autor_id) REFERENCES usuarios(id),
+  FOREIGN KEY (grupo_id) REFERENCES grupos(id)
+) ENGINE=InnoDB;
+
+-- 15) Tabla de campos dinámicos
+CREATE TABLE IF NOT EXISTS campos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  categoria_id INT,
+  nombre VARCHAR(255),
+  tipo VARCHAR(50),
+  opciones TEXT,
+  posicion INT,
+  grupo_id INT,
+  FOREIGN KEY (categoria_id) REFERENCES tipos_items(id),
+  FOREIGN KEY (grupo_id) REFERENCES grupos(id)
+) ENGINE=InnoDB;
+
+-- 16) Tabla de valores de campos
+CREATE TABLE IF NOT EXISTS valores_campos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  item_id INT,
+  campo_id INT,
+  valor TEXT,
+  FOREIGN KEY (item_id) REFERENCES items(id),
+  FOREIGN KEY (campo_id) REFERENCES campos(id)
+) ENGINE=InnoDB;
+
+-- 17) Tabla de auditoría
+CREATE TABLE IF NOT EXISTS auditoria (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  usuario_id INT,
+  accion VARCHAR(50),
+  tabla_afectada VARCHAR(100),
+  registro_id INT,
+  descripcion TEXT,
+  fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+) ENGINE=InnoDB;
+
+-- 18) Tabla de documentos personalizados
+CREATE TABLE IF NOT EXISTS registros (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  usuario_id INT,
+  tipo VARCHAR(50),
+  nombre_documento TEXT,
+  ruta_documento TEXT,
+  fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+) ENGINE=InnoDB;

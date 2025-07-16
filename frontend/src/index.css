@@ -1,0 +1,115 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+  background-color: #f3f4f6; /* bg-gray-100 */
+}
+/* ✅ Borde para el checkbox cuando está inactivo */
+.p-checkbox-box {
+    border: 2px solid #ccc !important; /* Borde gris cuando está inactivo */
+    border-radius: 4px; /* Esquinas redondeadas */
+    width: 20px;
+    height: 20px;
+    transition: all 0.2s ease-in-out;
+}
+
+/* ✅ Cambia el borde al pasar el mouse */
+.p-checkbox-box:hover {
+    border-color: #28a745 !important; /* Cambia a verde en hover */
+    cursor: pointer; /* Cambia el cursor a mano */
+}
+
+/* ✅ Efecto cuando el checkbox está seleccionado */
+.p-checkbox-box.p-highlight {
+    border-color: #28a745 !important; /* Verde cuando está activo */
+    background-color: #28a745 !important;
+}
+
+/* ✅ Pequeña animación cuando se selecciona */
+.p-checkbox-box.p-highlight::after {
+    animation: fadeIn 0.2s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.8);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+.custom-menu-item {
+    border-radius: 8px;
+    transition: background-color 0.3s ease;
+    padding: 5px 12px !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+
+
+
+.p-menuitem-link:hover {
+    background-color: #CEEFEB !important;
+    border-radius: 8px;  /* Mantener el borde redondeado al pasar el cursor */
+}
+
+
+
+/* Asegúrate de que el cuerpo permite el desplazamiento */
+body, html {
+    height: 100%;
+    margin: 0;
+    overflow: auto;
+  }
+  
+  /* Clase para el contenedor principal */
+  .main-container {
+    padding: 1rem;
+    overflow-y: auto;
+    height: 100vh;
+  }
+  
+  /* Clase para el modal */
+  .bg-overlay {
+    background-color: rgba(0, 0, 0, 0.5);
+  }
+  
+  .flex-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* Estilo para la fila seleccionada */
+.selected-row {
+    background-color: #ffcccc; /* Rojo claro */
+  }
+  .loading-spinner-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh; /* Full height of the viewport */
+  }
+
+  /* styles.css */
+body {
+    font-family: Arial, sans-serif;
+  }
+  
+  .hot {
+    margin: 20px auto;
+    width: 100%;
+  }
+  
+  .hot .ht_master .wtHolder {
+    overflow: hidden !important;
+  }
+
+  .flex-grow.p-0.pt-16.overflow-hidden {
+    background: #f3f4f6;
+}
