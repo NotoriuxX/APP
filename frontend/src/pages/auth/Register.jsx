@@ -1,20 +1,31 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { InputText } from 'primereact/inputtext';
 import { Button } from 'primereact/button';
 import { useNavigate } from 'react-router-dom';
 
-const getPasswordStrength = (pw) => {
+/* ---------- utilidades ---------- */
+const capitalizeWords = (str = '') =>
+  str
+    .toLocaleLowerCase('es')
+    .split(/(\s|-)/)
+    .map(w =>
+      w.match(/\s|-/) ? w : w.charAt(0).toLocaleUpperCase('es') + w.slice(1)
+    )
+    .join('');
+
+const toEmailLower = (str = '') => str.toLocaleLowerCase('en');
+
+const getPasswordStrength = pw => {
   if (pw.length < 8) return 'weak';
   const hasLetters = /[a-zA-Z]/.test(pw);
   const hasNumbers = /\d/.test(pw);
   const hasSpecial = /[^a-zA-Z0-9]/.test(pw);
-
   if (hasLetters && hasNumbers && hasSpecial && pw.length >= 12) return 'strong';
   if (hasLetters && hasNumbers) return 'medium';
   return 'weak';
 };
 
-const Register = () => {
+export default function Register() {
   const [usuario, setUsuario] = useState('');
   const [apellido, setApellido] = useState('');
   const [email, setEmail] = useState('');
@@ -26,13 +37,23 @@ const Register = () => {
   const [success, setSuccess] = useState('');
   const navigate = useNavigate();
 
-  // Recalcula la fuerza cada vez que cambia la contraseña
   const strength = useMemo(() => getPasswordStrength(contrasena), [contrasena]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      .calypso-focus:focus {
+        outline: none !important;
+        box-shadow: none !important;
+        border: 2px solid #00BCD4 !important;
+      }
+    `;
+    document.head.appendChild(style);
+    return () => document.head.removeChild(style);
+  }, []);
 
-    // Validaciones básicas
+  const handleSubmit = async e => {
+    e.preventDefault();
     if (!usuario || !apellido || !email || !contrasena || !confirmContrasena) {
       setError('Todos los campos son obligatorios');
       return;
@@ -42,7 +63,9 @@ const Register = () => {
       return;
     }
     if (strength === 'weak') {
-      setError('La contraseña debe tener al menos 8 caracteres e incluir letras y números');
+      setError(
+        'La contraseña debe tener al menos 8 caracteres e incluir letras y números'
+      );
       return;
     }
 
@@ -56,10 +79,9 @@ const Register = () => {
           nombre: usuario,
           apellido,
           email,
-          password: contrasena
-        })
+          password: contrasena,
+        }),
       });
-
       if (!res.headers.get('content-type')?.includes('application/json')) {
         throw new Error(`Respuesta inesperada (${res.status})`);
       }
@@ -68,7 +90,6 @@ const Register = () => {
 
       setSuccess('Cuenta creada correctamente, redirigiendo…');
       setTimeout(() => navigate('/login'), 1500);
-
     } catch (err) {
       setError(err.message);
     }
@@ -77,7 +98,9 @@ const Register = () => {
   return (
     <div className="min-h-screen p-4 md:p-8 bg-gray-100 flex items-center justify-center">
       <div className="bg-white p-8 rounded-xl shadow-md w-full max-w-md">
-        <h2 className="text-2xl font-semibold text-gray-800 mb-6 text-center">Crear Cuenta</h2>
+        <h2 className="text-2xl font-semibold text-gray-800 mb-6 text-center">
+          Crear Cuenta
+        </h2>
 
         {error && <p className="text-red-500 mb-4">{error}</p>}
         {success && <p className="text-green-600 mb-4">{success}</p>}
@@ -85,70 +108,86 @@ const Register = () => {
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Nombres */}
           <div>
-            <label htmlFor="usuario" className="block text-gray-700 mb-2">Nombres</label>
+            <label htmlFor="nombres" className="block text-gray-700 mb-2">
+              Nombres
+            </label>
             <div className="p-inputgroup">
-              <span className="p-inputgroup-addon"><i className="pi pi-user-plus" /></span>
+              <span className="p-inputgroup-addon">
+                <i className="pi pi-user-plus" />
+              </span>
               <InputText
-                id="usuario"
+                id="nombres"
                 name="given-name"
                 autoComplete="given-name"
                 value={usuario}
-                onChange={(e) => setUsuario(e.target.value)}
-                placeholder=" Carlos Felipe"
-                className="w-full"
+                onChange={e => setUsuario(capitalizeWords(e.target.value))}
+                placeholder="Carlos Felipe"
+                className="w-full calypso-focus"
               />
             </div>
           </div>
 
           {/* Apellidos */}
           <div>
-            <label htmlFor="apellido" className="block text-gray-700 mb-2">Apellidos</label>
+            <label htmlFor="apellidos" className="block text-gray-700 mb-2">
+              Apellidos
+            </label>
             <div className="p-inputgroup">
-              <span className="p-inputgroup-addon"><i className="pi pi-id-card" /></span>
+              <span className="p-inputgroup-addon">
+                <i className="pi pi-id-card" />
+              </span>
               <InputText
-                id="apellido"
+                id="apellidos"
                 name="family-name"
                 autoComplete="family-name"
                 value={apellido}
-                onChange={e => setApellido(e.target.value)}
-                placeholder=" Gómez Pérez"
-                className="w-full"
+                onChange={e => setApellido(capitalizeWords(e.target.value))}
+                placeholder="Gómez Pérez"
+                className="w-full calypso-focus"
               />
             </div>
           </div>
 
-          {/* Email */}
+          {/* Correo */}
           <div>
-            <label htmlFor="email" className="block text-gray-700 mb-2">Correo</label>
+            <label htmlFor="email" className="block text-gray-700 mb-2">
+              Correo
+            </label>
             <div className="p-inputgroup">
-              <span className="p-inputgroup-addon"><i className="pi pi-envelope" /></span>
+              <span className="p-inputgroup-addon">
+                <i className="pi pi-envelope" />
+              </span>
               <InputText
                 id="email"
                 name="email"
                 type="email"
-                autoComplete="email"
+                pattern="[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder=" Correo@ejemplo.com"
-                className="w-full"
+                onChange={e => setEmail(toEmailLower(e.target.value))}
+                placeholder="correo@ejemplo.com"
+                className="w-full calypso-focus"
               />
             </div>
           </div>
 
           {/* Contraseña */}
           <div>
-            <label htmlFor="contrasena" className="block text-gray-700 mb-2">Contraseña</label>
+            <label htmlFor="contrasena" className="block text-gray-700 mb-2">
+              Contraseña
+            </label>
             <div className="p-inputgroup relative">
-              <span className="p-inputgroup-addon"><i className="pi pi-lock" /></span>
+              <span className="p-inputgroup-addon">
+                <i className="pi pi-lock" />
+              </span>
               <InputText
                 id="contrasena"
                 name="new-password"
-                type={showContrasena ? 'text' : 'password'}
                 autoComplete="new-password"
+                type={showContrasena ? 'text' : 'password'}
                 value={contrasena}
-                onChange={(e) => setContrasena(e.target.value)}
+                onChange={e => setContrasena(e.target.value)}
                 placeholder="Contraseña"
-                className="w-full pr-10"
+                className="w-full pr-10 calypso-focus"
               />
               <button
                 type="button"
@@ -158,37 +197,62 @@ const Register = () => {
                 <i className={`pi ${showContrasena ? 'pi-eye-slash' : 'pi-eye'}`} />
               </button>
             </div>
+
             {/* Barra de fuerza */}
             <div className="mt-2 flex space-x-1">
-              <span className={`flex-1 h-1 rounded ${strength !== 'weak' ? 'bg-red-500' : 'bg-gray-200'}`} />
-              <span className={`flex-1 h-1 rounded ${strength === 'medium' || strength === 'strong' ? 'bg-yellow-500' : 'bg-gray-200'}`} />
-              <span className={`flex-1 h-1 rounded ${strength === 'strong' ? 'bg-green-500' : 'bg-gray-200'}`} />
+              <span
+                className={`flex-1 h-1 rounded ${
+                  strength !== 'weak' ? 'bg-red-500' : 'bg-gray-200'
+                }`}
+              />
+              <span
+                className={`flex-1 h-1 rounded ${
+                  strength === 'medium' || strength === 'strong'
+                    ? 'bg-yellow-500'
+                    : 'bg-gray-200'
+                }`}
+              />
+              <span
+                className={`flex-1 h-1 rounded ${
+                  strength === 'strong' ? 'bg-green-500' : 'bg-gray-200'
+                }`}
+              />
             </div>
-            <p className={`mt-1 text-sm ${
-              strength === 'weak' ? 'text-red-500' :
-              strength === 'medium' ? 'text-yellow-500' :
-              'text-green-500'
-            }`}>
-              {strength === 'weak' ? 'Débil' :
-               strength === 'medium' ? 'Mediana' :
-               'Fuerte'}
+            <p
+              className={`mt-1 text-sm ${
+                strength === 'weak'
+                  ? 'text-red-500'
+                  : strength === 'medium'
+                  ? 'text-yellow-500'
+                  : 'text-green-500'
+              }`}
+            >
+              {strength === 'weak'
+                ? 'Débil'
+                : strength === 'medium'
+                ? 'Mediana'
+                : 'Fuerte'}
             </p>
           </div>
 
           {/* Confirmar Contraseña */}
           <div>
-            <label htmlFor="confirmContrasena" className="block text-gray-700 mb-2">Confirmar Contraseña</label>
+            <label htmlFor="confirmContrasena" className="block text-gray-700 mb-2">
+              Confirmar Contraseña
+            </label>
             <div className="p-inputgroup relative">
-              <span className="p-inputgroup-addon"><i className="pi pi-lock" /></span>
+              <span className="p-inputgroup-addon">
+                <i className="pi pi-lock" />
+              </span>
               <InputText
                 id="confirmContrasena"
                 name="new-password"
-                type={showConfirm ? 'text' : 'password'}
                 autoComplete="new-password"
+                type={showConfirm ? 'text' : 'password'}
                 value={confirmContrasena}
-                onChange={(e) => setConfirmContrasena(e.target.value)}
-                placeholder=" Confirmar Contraseña"
-                className="w-full pr-10"
+                onChange={e => setConfirmContrasena(e.target.value)}
+                placeholder="Confirmar Contraseña"
+                className="w-full pr-10 calypso-focus"
               />
               <button
                 type="button"
@@ -200,7 +264,6 @@ const Register = () => {
             </div>
           </div>
 
-          {/* Botón Registrar */}
           <Button
             type="submit"
             label="Registrarse"
@@ -217,6 +280,4 @@ const Register = () => {
       </div>
     </div>
   );
-};
-
-export default Register;
+}

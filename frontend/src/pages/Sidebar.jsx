@@ -13,7 +13,14 @@ import usePermissions from "../hooks/usePermissions";
 
 const Sidebar = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { hasPermission, loading } = usePermissions();
+
+  // Función para alternar el menú en móviles
+  const toggleMobileMenu = () => {
+    setIsMobileMenuOpen(!isMobileMenuOpen);
+    setIsOpen(!isMobileMenuOpen);
+  };
 
   const routes = [
     { 
@@ -112,13 +119,44 @@ const Sidebar = () => {
 
   return (
     <div className="flex">
+      {/* Botón de menú hamburguesa - Solo visible en móviles */}
+      <button
+        onClick={toggleMobileMenu}
+        className="fixed top-4 left-4 z-50 p-2 rounded-lg bg-white shadow-lg border border-gray-200 lg:hidden hover:bg-gray-50 transition-colors duration-200"
+        aria-label="Menú"
+      >
+        <svg
+          className="w-6 h-6 text-gray-600"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          {isMobileMenuOpen ? (
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M6 18L18 6M6 6l12 12"
+            />
+          ) : (
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M4 6h16M4 12h16M4 18h16"
+            />
+          )}
+        </svg>
+      </button>
+
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 h-screen bg-white shadow-md border-r border-gray-300 transition-all duration-300 flex flex-col z-50 ${
-          isOpen ? "w-56" : "w-16"
-        }`}
-        onMouseEnter={() => setIsOpen(true)}
-        onMouseLeave={() => setIsOpen(false)}
+        className={`fixed top-0 left-0 h-screen bg-white shadow-md border-r border-gray-300 transition-all duration-300 flex flex-col z-40
+          ${isOpen ? "w-56" : "w-16"}
+          lg:translate-x-0 ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
+        `}
+        onMouseEnter={() => !isMobileMenuOpen && window.innerWidth >= 1024 && setIsOpen(true)}
+        onMouseLeave={() => !isMobileMenuOpen && window.innerWidth >= 1024 && setIsOpen(false)}
       >
         {/* NAV */}
         <nav className="mt-4 flex-grow">
@@ -132,8 +170,17 @@ const Sidebar = () => {
         </nav>
       </aside>
 
+      {/* Overlay para móviles */}
+      {isMobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden"
+          onClick={toggleMobileMenu}
+          aria-hidden="true"
+        />
+      )}
+
       {/* Contenido principal */}
-      <main className="flex-grow ml-16 p-4 transition-all duration-300">
+      <main className="flex-grow p-4 transition-all duration-300 lg:ml-16">
         {/* Aquí va el contenido */}
       </main>
     </div>

@@ -2,10 +2,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   FaCopy, FaPlus, FaPrint, FaEdit, FaTrash,
   FaFileAlt, FaPalette, FaClipboardList, FaSearch,
-  FaCheckCircle, FaTimes
+  FaCheckCircle, FaTimes,
+  FaSort, FaSortUp, FaSortDown
 } from 'react-icons/fa';
 
 const PhotocopyPage = () => {
+  // 1. Estado para el orden
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [photocopies, setPhotocopies] = useState([]);
   const [filteredPhotocopies, setFilteredPhotocopies] = useState([]);
   const [editingPhotocopy, setEditingPhotocopy] = useState(null);
@@ -185,6 +188,14 @@ const PhotocopyPage = () => {
   }, []);
 
   // Efectos para cargar datos y reactividad
+  // 2. Función para solicitar orden
+  const requestSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
   useEffect(() => {
     fetchPhotocopies();
   }, [fetchPhotocopies]);
@@ -377,10 +388,23 @@ const PhotocopyPage = () => {
   };
 
   // Paginación
+  // 3. Generar datos ordenados
+  const sortedPhotocopies = React.useMemo(() => {
+    if (!sortConfig.key) return filteredPhotocopies;
+    return [...filteredPhotocopies].sort((a, b) => {
+      const aVal = a[sortConfig.key];
+      const bVal = b[sortConfig.key];
+      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredPhotocopies, sortConfig]);
+
+  // 4. Reemplazar fuente de la tabla
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = filteredPhotocopies.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(filteredPhotocopies.length / itemsPerPage);
+  const currentItems = sortedPhotocopies.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(sortedPhotocopies.length / itemsPerPage);
 
   // Estilos CSS para animaciones
   const styles = {
@@ -739,23 +763,72 @@ const PhotocopyPage = () => {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-2 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      {/* 5. Cabeceras clicables con iconos */}
+                      <th
+                        onClick={() => requestSort('registrado_en')}
+                        className="px-2 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:text-teal-600"
+                      >
                         Fecha
+                        {sortConfig.key === 'registrado_en'
+                          ? (sortConfig.direction === 'asc'
+                              ? <FaSortUp className="inline ml-1"/>
+                              : <FaSortDown className="inline ml-1"/>)
+                          : <FaSort className="inline ml-1 text-gray-400"/>}
                       </th>
-                      <th className="px-2 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">
+                      <th
+                        onClick={() => requestSort('usuario_nombre')}
+                        className="px-2 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium uppercase tracking-wider hidden sm:table-cell cursor-pointer hover:text-teal-600"
+                      >
                         Usuario
+                        {sortConfig.key === 'usuario_nombre'
+                          ? (sortConfig.direction === 'asc'
+                              ? <FaSortUp className="inline ml-1"/>
+                              : <FaSortDown className="inline ml-1"/>)
+                          : <FaSort className="inline ml-1 text-gray-400"/>}
                       </th>
-                      <th className="px-2 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th
+                        onClick={() => requestSort('cantidad')}
+                        className="px-2 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:text-teal-600"
+                      >
                         Cant.
+                        {sortConfig.key === 'cantidad'
+                          ? (sortConfig.direction === 'asc'
+                              ? <FaSortUp className="inline ml-1"/>
+                              : <FaSortDown className="inline ml-1"/>)
+                          : <FaSort className="inline ml-1 text-gray-400"/>}
                       </th>
-                      <th className="px-2 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th
+                        onClick={() => requestSort('tipo')}
+                        className="px-2 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:text-teal-600"
+                      >
                         Tipo
+                        {sortConfig.key === 'tipo'
+                          ? (sortConfig.direction === 'asc'
+                              ? <FaSortUp className="inline ml-1"/>
+                              : <FaSortDown className="inline ml-1"/>)
+                          : <FaSort className="inline ml-1 text-gray-400"/>}
                       </th>
-                      <th className="px-2 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">
+                      <th
+                        onClick={() => requestSort('doble_hoja')}
+                        className="px-2 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium uppercase tracking-wider hidden sm:table-cell cursor-pointer hover:text-teal-600"
+                      >
                         Doble
+                        {sortConfig.key === 'doble_hoja'
+                          ? (sortConfig.direction === 'asc'
+                              ? <FaSortUp className="inline ml-1"/>
+                              : <FaSortDown className="inline ml-1"/>)
+                          : <FaSort className="inline ml-1 text-gray-400"/>}
                       </th>
-                      <th className="px-2 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th
+                        onClick={() => requestSort('comentario')}
+                        className="px-2 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:text-teal-600"
+                      >
                         Desc.
+                        {sortConfig.key === 'comentario'
+                          ? (sortConfig.direction === 'asc'
+                              ? <FaSortUp className="inline ml-1"/>
+                              : <FaSortDown className="inline ml-1"/>)
+                          : <FaSort className="inline ml-1 text-gray-400"/>}
                       </th>
                     </tr>
                   </thead>
