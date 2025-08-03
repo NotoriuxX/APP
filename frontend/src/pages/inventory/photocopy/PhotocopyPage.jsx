@@ -27,6 +27,10 @@ const PhotocopyPage = () => {
     totalBN: 0,
     totalColor: 0
   });
+  // Estados para el modal de confirmación de eliminación
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteModalAnimating, setDeleteModalAnimating] = useState(false);
+  const [photocopieToDelete, setPhotocopieToDelete] = useState(null);
   
   const [photocopyData, setPhotocopyData] = useState({
     cantidad: '',
@@ -44,20 +48,30 @@ const PhotocopyPage = () => {
   const [animatedRows, setAnimatedRows] = useState(new Set());
   const [lastOperation, setLastOperation] = useState(null); // 'add', 'update', 'delete'
 
-  // Función para mostrar toast
+  // Función para mostrar toast - en esquina superior derecha
   const showToastMessage = (message, type = 'success') => {
-    setToastMessage(message);
-    setToastType(type);
-    setShowToast(true);
+    // Primero aseguramos que cualquier toast previo se cierre
+    setShowToast(false);
     
-    // Ocultar el toast después de 3 segundos
+    // Luego de un pequeño delay, mostramos el nuevo toast
     setTimeout(() => {
-      setShowToast(false);
-    }, 3000);
+      setToastMessage(message);
+      setToastType(type);
+      setShowToast(true);
+      
+      // Reproducir un sonido de notificación (opcional)
+      // const audio = new Audio('/notification-sound.mp3');
+      // audio.play().catch(e => console.log('Error reproduciendo sonido:', e));
+      
+      // Ocultar el toast después de 4 segundos para dar tiempo suficiente de lectura
+      setTimeout(() => {
+        setShowToast(false);
+      }, 4000);
+    }, 100);
   };
 
   const itemsPerPageOptions = [5, 10, 25, 50];
-  const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3300/api';
+  const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3300';
 
   // Función para obtener fecha actual para filtros
   const getDateForFilter = useCallback((period) => {
@@ -99,7 +113,7 @@ const PhotocopyPage = () => {
       const token = localStorage.getItem('token');
       const { desde, hasta } = getDateForFilter(filterPeriod);
       
-      let url = `${API_URL}/photocopies`;
+      let url = `${API_URL}/api/photocopies`;
       const params = new URLSearchParams();
       
       if (desde) params.append('desde', desde);
@@ -142,7 +156,22 @@ const PhotocopyPage = () => {
         const groupMatch = photocopy.grupo_nombre ? 
           photocopy.grupo_nombre.toLowerCase().includes(searchTermLower) : false;
         
-        return commentMatch || userMatch || groupMatch;
+        // Buscar por tipo (bn/color)
+        const tipoMatch = 
+          (searchTermLower === 'bn' && photocopy.tipo === 'bn') ||
+          (searchTermLower === 'color' && photocopy.tipo === 'color') ||
+          (photocopy.tipo && photocopy.tipo.toLowerCase().includes(searchTermLower));
+        
+        // Buscar por doble hoja (sí/no)
+        const doubleSheetMatch = 
+          ((searchTermLower === 'si' || searchTermLower === 'sí') && photocopy.doble_hoja) ||
+          (searchTermLower === 'no' && !photocopy.doble_hoja);
+        
+        // Buscar por cantidad
+        const cantidadMatch = photocopy.cantidad && 
+          photocopy.cantidad.toString().includes(searchTermLower);
+        
+        return commentMatch || userMatch || groupMatch || tipoMatch || doubleSheetMatch || cantidadMatch;
       });
     }
 
@@ -247,8 +276,8 @@ const PhotocopyPage = () => {
       setLoading(true);
       const token = localStorage.getItem('token');
       const url = editingPhotocopy 
-        ? `${API_URL}/photocopies/${editingPhotocopy.id}`
-        : `${API_URL}/photocopies`;
+        ? `${API_URL}/api/photocopies/${editingPhotocopy.id}`
+        : `${API_URL}/api/photocopies`;
       
       const method = editingPhotocopy ? 'PUT' : 'POST';
       const payload = {
@@ -275,7 +304,11 @@ const PhotocopyPage = () => {
       await fetchPhotocopies();
       resetForm();
       handleRowAnimation(data.id, editingPhotocopy ? 'update' : 'add');
-      showToastMessage(editingPhotocopy ? 'Registro actualizado correctamente' : 'Registro creado correctamente');
+      
+      // Mostramos el mensaje después de completar todas las operaciones
+      setTimeout(() => {
+        showToastMessage(editingPhotocopy ? 'Registro actualizado correctamente' : 'Registro creado correctamente');
+      }, 100);
     } catch (error) {
       console.error('Error:', error);
       showToastMessage(error.message || 'Error al guardar el registro', 'error');
@@ -290,7 +323,7 @@ const PhotocopyPage = () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${API_URL}/photocopies/${editingPhotocopy.id}`, {
+      const response = await fetch(`${API_URL}/api/photocopies/${editingPhotocopy.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -310,7 +343,11 @@ const PhotocopyPage = () => {
 
       await fetchPhotocopies();
       handleCloseModal();
-      showToastMessage('Registro actualizado correctamente', 'success');
+      
+      // Mostramos el mensaje de éxito después de un pequeño delay para que el modal se cierre completamente
+      setTimeout(() => {
+        showToastMessage('Registro actualizado correctamente', 'success');
+      }, 400);
     } catch (error) {
       console.error('Error:', error);
       showToastMessage(error.message, 'error');
@@ -319,17 +356,39 @@ const PhotocopyPage = () => {
     }
   };
 
+  // Función para mostrar el modal de confirmación de eliminación
+  const showDeleteConfirmation = (id) => {
+    setPhotocopieToDelete(id);
+    setShowDeleteModal(true);
+    setTimeout(() => {
+      setDeleteModalAnimating(true);
+    }, 10);
+  };
+
+  // Función para cerrar el modal de confirmación
+  const closeDeleteModal = () => {
+    setDeleteModalAnimating(false);
+    setTimeout(() => {
+      setShowDeleteModal(false);
+      setPhotocopieToDelete(null);
+    }, 300);
+  };
+
   const handleDelete = async (id) => {
-    if (!window.confirm('¿Estás seguro de que deseas eliminar este registro?')) {
-      return;
-    }
+    // En lugar de window.confirm, ahora mostramos un modal personalizado
+    showDeleteConfirmation(id);
+  };
+
+  // Nueva función que se ejecuta cuando se confirma la eliminación
+  const confirmDelete = async () => {
+    if (!photocopieToDelete) return;
 
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
-      handleRowAnimation(id, 'delete');
+      handleRowAnimation(photocopieToDelete, 'delete');
       
-      const response = await fetch(`${API_URL}/photocopies/${id}`, {
+      const response = await fetch(`${API_URL}/api/photocopies/${photocopieToDelete}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -341,9 +400,17 @@ const PhotocopyPage = () => {
         throw new Error('Error al eliminar');
       }
 
-      handleCloseModal();
+      // Cerramos todos los modales antes de mostrar el mensaje de éxito
+      closeDeleteModal();  // Cerramos el modal de confirmación
+      handleCloseModal();  // Si el modal de edición está abierto, también lo cerramos
+      
+      // Actualizamos la data
       await fetchPhotocopies();
-      showToastMessage('Registro eliminado exitosamente', 'success');
+      
+      // Mostramos el mensaje de éxito después de un pequeño delay para que el modal se cierre completamente
+      setTimeout(() => {
+        showToastMessage('Registro eliminado exitosamente', 'success');
+      }, 400);
     } catch (error) {
       console.error('Error:', error);
       showToastMessage(error.message || 'Error al eliminar el registro', 'error');
@@ -1149,26 +1216,95 @@ const PhotocopyPage = () => {
           </div>
         )}
 
-        {/* Toast para mensajes */}
-        {showToast && (
-          <div className={`fixed top-5 right-5 max-w-sm w-full bg-white rounded-lg shadow-lg p-4 transition-all duration-300 transform ${
-            showToast ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0'
-          }`}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                {toastType === 'success' ? (
-                  <FaCheckCircle className="text-green-500 mr-3" />
-                ) : (
-                  <FaTimes className="text-red-500 mr-3" />
-                )}
-                <p className="text-sm font-medium text-gray-900">{toastMessage}</p>
+        {/* Modal de confirmación de eliminación */}
+        {showDeleteModal && (
+          <div className={`fixed inset-0 z-50 overflow-y-auto`}>
+            <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+              <div 
+                className={`fixed inset-0 bg-gray-500 transition-opacity duration-300 ease-out ${
+                  deleteModalAnimating ? 'bg-opacity-75' : 'bg-opacity-0'
+                }`} 
+                onClick={closeDeleteModal}
+              />
+
+              <div className={`inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all duration-300 ease-out sm:my-8 sm:align-middle sm:max-w-lg sm:w-full ${
+                deleteModalAnimating ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
+              }`}>
+                <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                  <div className="sm:flex sm:items-start">
+                    <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+                      <FaTrash className="h-6 w-6 text-red-600" />
+                    </div>
+                    <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                      <h3 className="text-lg leading-6 font-medium text-gray-900">
+                        Eliminar Registro
+                      </h3>
+                      <div className="mt-2">
+                        <p className="text-sm text-gray-500">
+                          ¿Estás seguro de que deseas eliminar este registro de fotocopia? Esta acción no se puede deshacer.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                  <button
+                    type="button"
+                    onClick={confirmDelete}
+                    disabled={loading}
+                    className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50"
+                  >
+                    {loading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Eliminando...
+                      </>
+                    ) : (
+                      'Eliminar'
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeDeleteModal}
+                    className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 sm:mt-0 sm:w-auto sm:text-sm"
+                  >
+                    Cancelar
+                  </button>
+                </div>
               </div>
-              <button
-                onClick={() => setShowToast(false)}
-                className="ml-4 text-gray-400 hover:text-gray-600 transition-colors duration-200"
-              >
-                <FaTimes className="h-4 w-4" />
-              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Toast para mensajes - Esquina superior derecha con mejor visibilidad */}
+        {showToast && (
+          <div className="fixed top-0 right-0 z-50 p-4 pointer-events-none">
+            <div className={`max-w-sm bg-white rounded-lg shadow-xl p-4 transition-all duration-300 transform pointer-events-auto ${
+              showToast ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
+            }`}
+            style={{
+              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+            }}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  {toastType === 'success' ? (
+                    <div className="bg-green-100 rounded-full p-2 mr-3">
+                      <FaCheckCircle className="text-green-500 text-lg" />
+                    </div>
+                  ) : (
+                    <div className="bg-red-100 rounded-full p-2 mr-3">
+                      <FaTimes className="text-red-500 text-lg" />
+                    </div>
+                  )}
+                  <p className="text-sm font-medium text-gray-900">{toastMessage}</p>
+                </div>
+                <button
+                  onClick={() => setShowToast(false)}
+                  className="ml-4 text-gray-400 hover:text-gray-600 transition-colors duration-200 bg-gray-100 hover:bg-gray-200 rounded-full p-1"
+                >
+                  <FaTimes className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           </div>
         )}
