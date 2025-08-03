@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3300/api";
+const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3300";
 
 const useAuth = () => {
   const [usuario, setUsuario] = useState(null);
@@ -22,7 +22,7 @@ const useAuth = () => {
       return;
     }
     try {
-      const response = await fetch(`${API_URL}/auth/usuario`, {
+      const response = await fetch(`${API_URL}/api/auth/usuario`, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${token}`,

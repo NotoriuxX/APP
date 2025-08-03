@@ -386,6 +386,7 @@ router.put('/:id', verificarToken, async (req, res) => {
 
 // Eliminar trabajadores (con verificación de permisos)
 router.delete('/:id?', verificarToken, async (req, res) => {
+    // Este endpoint elimina completamente al trabajador y todos sus datos de usuario relacionados
     const { id } = req.params; 
     const { ids } = req.body; 
     const usuarioId = req.usuario.id;
@@ -425,21 +426,23 @@ router.delete('/:id?', verificarToken, async (req, res) => {
 
             const usuarioIds = results.map(row => row.usuario_id);
 
-            // Eliminar trabajadores (esto también eliminará los usuarios debido a CASCADE)
-            const deleteWorkersQuery = `DELETE FROM trabajadores WHERE id IN (${placeholders})`;
+            // Primero, eliminar los usuarios (lo que eliminará automáticamente los trabajadores relacionados por CASCADE)
+            const placeholdersUsuarios = usuarioIds.map(() => '?').join(',');
+            const deleteUsuariosQuery = `DELETE FROM usuarios WHERE id IN (${placeholdersUsuarios})`;
             
-            db.query(deleteWorkersQuery, workerIds, (err, workerResult) => {
+            db.query(deleteUsuariosQuery, usuarioIds, (err, usuarioResult) => {
                 if (err) {
-                    return res.status(500).json({ error: 'Error al eliminar trabajadores' });
+                    console.error('Error al eliminar usuarios:', err);
+                    return res.status(500).json({ error: 'Error al eliminar usuarios' });
                 }
 
-                if (workerResult.affectedRows === 0) {
-                    return res.status(404).json({ message: 'Trabajadores no encontrados' });
+                if (usuarioResult.affectedRows === 0) {
+                    return res.status(404).json({ message: 'Usuarios no encontrados' });
                 }
 
-                console.log('Trabajadores eliminados:', workerIds);
-                console.log('Usuarios relacionados:', usuarioIds);
-                res.json({ message: `Eliminados ${workerResult.affectedRows} trabajadores.` });
+                console.log('Usuarios eliminados:', usuarioIds);
+                console.log('Trabajadores eliminados (cascada):', workerIds);
+                res.json({ message: `Eliminados ${usuarioResult.affectedRows} trabajadores y sus datos de usuario.` });
             });
         });
     } catch (error) {

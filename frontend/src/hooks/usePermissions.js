@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import useAuth from './useAuth';
 
+const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3300";
+
 const usePermissions = () => {
   const [permissions, setPermissions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -67,17 +69,17 @@ const usePermissions = () => {
         console.log('👤 Usuario NO es propietario, consultando permisos específicos...');
 
         // Obtener permisos de todos los módulos
-        const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3300/api';
+        const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3300';
         console.log('🌐 API URL:', API_URL);
         
         const responses = await Promise.all([
-          fetch(`${API_URL}/photocopies/permissions`, {
+          fetch(`${API_URL}/api/photocopies/permissions`, {
             headers: { 'Authorization': `Bearer ${token}` }
           }),
-          fetch(`${API_URL}/trabajadores/permissions`, {
+          fetch(`${API_URL}/api/trabajadores/permissions`, {
             headers: { 'Authorization': `Bearer ${token}` }
           }),
-          fetch(`${API_URL}/inventarios/permissions`, {
+          fetch(`${API_URL}/api/inventarios/permissions`, {
             headers: { 'Authorization': `Bearer ${token}` }
           }),
         ]);

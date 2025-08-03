@@ -2,6 +2,22 @@ import React, { useState, useEffect, useCallback } from 'react';
 import useAuth from '../../hooks/useAuth';
 import styles from './InventoryWorker.module.css';
 
+/**
+ * CONTROL DE FUNCIONALIDADES DE DEPARTAMENTOS Y OCUPACIONES
+ * =======================================================
+ * Las funcionalidades de selección, gestión y filtrado de departamentos
+ * y ocupaciones están temporalmente bloqueadas mientras se completa su desarrollo.
+ * 
+ * PARA HABILITAR ESTAS FUNCIONALIDADES:
+ * 1. Cambia la constante FEATURE_READY de 'false' a 'true'
+ * 2. Guarda este archivo
+ * 3. Reinicia la aplicación
+ * 
+ * Cuando estén habilitadas, se podrán usar los selectores de filtro y los 
+ * botones de gestión (tuerquitas) tanto en el panel de filtros como en el formulario.
+ */
+const FEATURE_READY = false; // Cambia a 'true' cuando estén listas las funcionalidades
+
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3300/api';
 
 // Estilos CSS personalizados para animaciones suaves
@@ -151,6 +167,11 @@ export default function InventoryWorker() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
 
+  // Estados para toast
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('success'); // 'success' o 'error'
+  
   // Estados para formulario
   const [showForm, setShowForm] = useState(false);
   const [formAnimating, setFormAnimating] = useState(false);
@@ -279,6 +300,24 @@ export default function InventoryWorker() {
   // Función para filtrar ocupaciones protegidas
   const filtrarOcupacionesProtegidas = (ocupaciones) => {
     return ocupaciones.filter(ocupacion => !isOcupacionProtegida(ocupacion));
+  };
+  
+  // Función para mostrar toast - en esquina superior derecha
+  const showToastMessage = (message, type = 'success') => {
+    // Primero aseguramos que cualquier toast previo se cierre
+    setShowToast(false);
+    
+    // Luego de un pequeño delay, mostramos el nuevo toast
+    setTimeout(() => {
+      setToastMessage(message);
+      setToastType(type);
+      setShowToast(true);
+      
+      // Ocultar el toast después de 4 segundos para dar tiempo suficiente de lectura
+      setTimeout(() => {
+        setShowToast(false);
+      }, 4000);
+    }, 100);
   };
 
   // Función para capitalizar solo la primera letra del texto completo (más flexible)
@@ -606,6 +645,12 @@ export default function InventoryWorker() {
 
   // Función para abrir modal de gestión simplificado
   const openExternalManageModal = async (type) => {
+    // Si la funcionalidad no está habilitada, no hacer nada
+    if (!FEATURE_READY) {
+      console.log(`Funcionalidad de gestión de ${type} no disponible aún. Cambia FEATURE_READY a true cuando esté listo.`);
+      return;
+    }
+    
     setExternalManageType(type);
     setNewItemValue('');
     setEditingItemIndex(null);
@@ -1050,11 +1095,17 @@ export default function InventoryWorker() {
 
   // Función para seleccionar sugerencia
   const selectDepartamento = (dept) => {
+    // NOTA: Esta función está afectada por la variable FEATURE_READY
+    // Si FEATURE_READY es false, los botones de UI que llaman a esta función estarán deshabilitados
+    // y este código no se ejecutará. Solo se habilitan cuando FEATURE_READY es true.
     setFormData(prev => ({ ...prev, departamento: dept.nombre }));
     setShowDepartamentoSuggestions(false);
   };
 
   const selectOcupacion = (ocupacion) => {
+    // NOTA: Esta función está afectada por la variable FEATURE_READY
+    // Si FEATURE_READY es false, los botones de UI que llaman a esta función estarán deshabilitados
+    // y este código no se ejecutará. Solo se habilitan cuando FEATURE_READY es true.
     setFormData(prev => ({ ...prev, ocupacion }));
     setShowOcupacionSuggestions(false);
   };
@@ -1341,15 +1392,7 @@ export default function InventoryWorker() {
   };
 
   // Limpiar mensajes después de 5 segundos
-  useEffect(() => {
-    if (error || success) {
-      const timer = setTimeout(() => {
-        setError(null);
-        setSuccess(null);
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [error, success]);
+  // Ya no necesitamos el efecto para limpiar mensajes, los toast se manejan automáticamente
 
   // Debounce para el search input
   useEffect(() => {
@@ -1511,12 +1554,24 @@ export default function InventoryWorker() {
   };
 
   const toggleDepartmentDropdown = () => {
+    // Si la funcionalidad no está habilitada, no hacer nada
+    if (!FEATURE_READY) {
+      console.log("Funcionalidad de departamentos no disponible aún. Cambia FEATURE_READY a true cuando esté listo.");
+      return;
+    }
+    
     setShowDepartmentDropdown(!showDepartmentDropdown);
     setShowStatusDropdown(false);
     setShowOcupacionDropdown(false);
   };
 
   const toggleOcupacionDropdown = () => {
+    // Si la funcionalidad no está habilitada, no hacer nada
+    if (!FEATURE_READY) {
+      console.log("Funcionalidad de ocupaciones no disponible aún. Cambia FEATURE_READY a true cuando esté listo.");
+      return;
+    }
+    
     setShowOcupacionDropdown(!showOcupacionDropdown);
     setShowStatusDropdown(false);
     setShowDepartmentDropdown(false);
@@ -1737,8 +1792,6 @@ export default function InventoryWorker() {
         const data = await handleResponse(response);
         if (!data) return; // Si hubo problema de autenticación
 
-        setSuccess(editingId ? 'Trabajador actualizado exitosamente' : 'Trabajador creado exitosamente');
-        
         // Usar la función closeForm para animación consistente y más rápida
         closeForm();
         
@@ -1746,11 +1799,17 @@ export default function InventoryWorker() {
         setTimeout(() => {
           fetchTrabajadores(); // Recargar datos
           fetchDepartamentos(); // Recargar departamentos para actualizar los filtros
+          
+          // Mostrar el mensaje de éxito cuando los datos estén actualizados
+          showToastMessage(
+            editingId ? 'Trabajador actualizado exitosamente' : 'Trabajador creado exitosamente',
+            'success'
+          );
         }, 300);
 
       } catch (err) {
         console.error('❌ Error en handleSubmit:', err);
-        setError(err.message);
+        showToastMessage(err.message, 'error');
       } finally {
         setLoading(false);
       }
@@ -2041,15 +2100,15 @@ export default function InventoryWorker() {
         }
       }
 
-      setSuccess(`${workerIds.length} trabajador(es) eliminado(s) exitosamente`);
       setShowBulkDeleteModal(false);
       setSelectedWorkers(new Set());
       setIsSelectMode(false);
-      fetchTrabajadores(); // Recargar datos
+      await fetchTrabajadores(); // Recargar datos
+      showToastMessage(`${workerIds.length} trabajador(es) eliminado(s) exitosamente`, 'success');
 
     } catch (err) {
       console.error('❌ Error en eliminación masiva:', err);
-      setError(err.message);
+      showToastMessage(err.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -2235,7 +2294,6 @@ export default function InventoryWorker() {
     if (!workerToDelete) return;
 
     setLoading(true);
-    setError(null);
 
     try {
       const token = localStorage.getItem('token');
@@ -2253,12 +2311,12 @@ export default function InventoryWorker() {
       const data = await handleResponse(response);
       if (!data) return; // Si hubo problema de autenticación
 
-      setSuccess('Trabajador eliminado exitosamente');
       closeDeleteModal();
-      fetchTrabajadores(); // Recargar datos
+      await fetchTrabajadores(); // Recargar datos
+      showToastMessage('Trabajador eliminado exitosamente', 'success');
 
     } catch (err) {
-      setError(err.message);
+      showToastMessage(err.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -2545,18 +2603,7 @@ export default function InventoryWorker() {
           </div>
         </div>
 
-        {/* Mensajes */}
-        {error && (
-          <div className="mb-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-            {error}
-          </div>
-        )}
-        
-        {success && (
-          <div className="mb-4 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
-            {success}
-          </div>
-        )}
+        {/* Los mensajes ahora se muestran como Toast */}
 
         {/* Controles superiores */}
         <div className={`bg-white rounded-lg shadow p-4 sm:p-6 mb-6 transition-all duration-300 ${
@@ -2632,28 +2679,34 @@ export default function InventoryWorker() {
                 <div className={`relative custom-select-wrapper ${styles.customSelectWrapper}`}>
                   <div className="flex items-center justify-between mb-1 h-6">
                     <span className="text-xs text-gray-500 font-medium">Ocupaciones</span>
-                    <button
-                      onClick={() => openExternalManageModal('ocupacion')}
-                      disabled={isFiltering}
-                      className="p-1 text-teal-600 hover:text-teal-800 hover:bg-teal-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                      title="Gestionar ocupaciones"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                      
-                    </button>
+                    <div className="relative group">
+                      <button
+                        type="button"
+                        disabled={true}
+                        className="p-1 text-gray-400 cursor-not-allowed rounded flex items-center gap-1"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                      </button>
+                      <div className="absolute -right-20 -top-1 opacity-0 group-hover:opacity-100 bg-white px-2 py-1 rounded shadow-sm text-sm font-medium text-gray-700 transition-opacity duration-200 z-10">
+                        Próximamente
+                      </div>
+                    </div>
                   </div>
                   <button
                     type="button"
-                    onClick={toggleOcupacionDropdown}
-                    disabled={isFiltering}
-                    className={`${styles.customSelectButton} ${isFiltering ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    onClick={FEATURE_READY ? toggleOcupacionDropdown : null}
+                    disabled={true}
+                    className={`${styles.customSelectButton} relative group cursor-not-allowed bg-gray-100`}
                   >
-                    <span>{getOcupacionDisplayText()}</span>
+                    <span>Todas las ocupaciones</span>
+                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-gray-100 bg-opacity-90 transition-opacity duration-200 rounded">
+                      <span className="text-sm font-medium text-gray-700">Próximamente</span>
+                    </div>
                     <svg 
-                      className={`w-4 h-4 ${styles.customSelectIcon} ${showOcupacionDropdown ? styles.open : ''}`} 
+                      className={`w-4 h-4 ${styles.customSelectIcon}`} 
                       fill="none" 
                       stroke="currentColor" 
                       viewBox="0 0 24 24"
@@ -2685,27 +2738,34 @@ export default function InventoryWorker() {
                 <div className={`relative custom-select-wrapper ${styles.customSelectWrapper}`}>
                   <div className="flex items-center justify-between mb-1 h-6">
                     <span className="text-xs text-gray-500 font-medium">Departamentos</span>
-                    <button
-                      onClick={() => openExternalManageModal('departamento')}
-                      disabled={isFiltering}
-                      className="p-1 text-teal-600 hover:text-teal-800 hover:bg-teal-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                      title="Gestionar departamentos"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                    </button>
+                    <div className="relative group">
+                      <button
+                        type="button"
+                        disabled={true}
+                        className="p-1 text-gray-400 cursor-not-allowed rounded flex items-center gap-1"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                      </button>
+                      <div className="absolute -right-20 -top-1 opacity-0 group-hover:opacity-100 bg-white px-2 py-1 rounded shadow-sm text-sm font-medium text-gray-700 transition-opacity duration-200 z-10">
+                        Próximamente
+                      </div>
+                    </div>
                   </div>
                   <button
                     type="button"
-                    onClick={toggleDepartmentDropdown}
-                    disabled={isFiltering}
-                    className={`${styles.customSelectButton} ${isFiltering ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    onClick={FEATURE_READY ? toggleDepartmentDropdown : null}
+                    disabled={true}
+                    className={`${styles.customSelectButton} relative group cursor-not-allowed bg-gray-100`}
                   >
-                    <span>{getDepartmentDisplayText()}</span>
+                    <span>Todos los departamentos</span>
+                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-gray-100 bg-opacity-90 transition-opacity duration-200 rounded">
+                      <span className="text-sm font-medium text-gray-700">Próximamente</span>
+                    </div>
                     <svg 
-                      className={`w-4 h-4 ${styles.customSelectIcon} ${showDepartmentDropdown ? styles.open : ''}`} 
+                      className={`w-4 h-4 ${styles.customSelectIcon}`} 
                       fill="none" 
                       stroke="currentColor" 
                       viewBox="0 0 24 24"
@@ -2775,7 +2835,7 @@ export default function InventoryWorker() {
                         </button>
                         {/* Tooltip personalizado */}
                         <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-all duration-500 ease-out whitespace-nowrap pointer-events-none z-50 scale-95 group-hover:scale-100">
-                          {selectedWorkers.size === 0 ? 'Selecciona trabajadores' : 'Borrado masivo'}
+                          {selectedWorkers.size === 0 ? 'Selecciona trabajadores' : 'Borrado'}
                           <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-2 border-r-2 border-t-2 border-transparent border-t-gray-800"></div>
                         </div>
                       </div>
@@ -3440,22 +3500,24 @@ export default function InventoryWorker() {
                     <label className="block text-sm font-medium text-gray-700">
                       Ocupación
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setExternalManageType('ocupacion');
-                        setShowExternalManageModal(true);
-                        setTimeout(() => setExternalManageAnimating(true), 10);
-                      }}
-                      className="text-xs text-teal-600 hover:text-teal-800 hover:underline flex items-center gap-1 transition-colors duration-200"
-                      title="Gestionar ocupaciones existentes"
-                    >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                      
-                    </button>
+                    <div className="relative group">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Nunca se activará porque está deshabilitado
+                        }}
+                        disabled={true}
+                        className="text-xs flex items-center gap-1 transition-colors duration-200 text-gray-400 cursor-not-allowed"
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                      </button>
+                      <div className="absolute -right-5 -top-1 opacity-0 group-hover:opacity-100 bg-white px-2 py-1 rounded shadow-sm text-sm font-medium text-gray-700 transition-opacity duration-200">
+                        Próximamente
+                      </div>
+                    </div>
                   </div>
                   <div className="relative">
                     <input
@@ -3468,6 +3530,8 @@ export default function InventoryWorker() {
                       placeholder="Ej: Profesor, Conserje, Administrativo..."
                       className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-sm ${styles.customInput}`}
                     />
+                    
+                    {/* Sugerencias de autocompletado */}
                     {showOcupacionSuggestions && ocupacionSuggestions.length > 0 && (
                       <div className={`absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-40 overflow-y-auto ${styles.autocompleteDropdown}`}>
                         {ocupacionSuggestions.map((ocupacion, index) => (
@@ -3520,22 +3584,24 @@ export default function InventoryWorker() {
                     <label className="block text-sm font-medium text-gray-700">
                       Departamento
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setExternalManageType('departamento');
-                        setShowExternalManageModal(true);
-                        setTimeout(() => setExternalManageAnimating(true), 10);
-                      }}
-                      className="text-xs text-teal-600 hover:text-teal-800 hover:underline flex items-center gap-1 transition-colors duration-200"
-                      title="Gestionar departamentos existentes"
-                    >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                      
-                    </button>
+                    <div className="relative group">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Nunca se activará porque está deshabilitado
+                        }}
+                        disabled={true}
+                        className="text-xs flex items-center gap-1 transition-colors duration-200 text-gray-400 cursor-not-allowed"
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                      </button>
+                      <div className="absolute -right-5 -top-1 opacity-0 group-hover:opacity-100 bg-white px-2 py-1 rounded shadow-sm text-sm font-medium text-gray-700 transition-opacity duration-200">
+                        Próximamente
+                      </div>
+                    </div>
                   </div>
                   <div className="relative">
                     <input
@@ -3553,6 +3619,8 @@ export default function InventoryWorker() {
                       placeholder="Ej: Administración, IT, Recursos Humanos... (opcional)"
                       className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-sm ${styles.customInput}`}
                     />
+                    
+                    {/* Sugerencias de autocompletado */}
                     {showDepartamentoSuggestions && departamentoSuggestions.length > 0 && (
                       <div className={`absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-40 overflow-y-auto ${styles.autocompleteDropdown}`}>
                         {departamentoSuggestions.map((dept) => (
@@ -3599,7 +3667,7 @@ export default function InventoryWorker() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row justify-between items-center space-y-2 sm:space-y-0 sm:space-x-3 pt-4">
-                  <div>
+                  {/*<div>
                     {editingId && selectedWorker && !selectedWorker.es_propietario && !selectedWorker.solo_lectura && selectedWorker.puede_eliminar !== false && (
                       <button
                         type="button"
@@ -3609,7 +3677,7 @@ export default function InventoryWorker() {
                         Eliminar Trabajador
                       </button>
                     )}
-                  </div>
+                  </div>*/}
                   <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
                     <button
                       type="button"
@@ -4635,6 +4703,45 @@ export default function InventoryWorker() {
                 </svg>
                 Los cambios afectan a todos los trabajadores
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast para mensajes - Esquina superior derecha con mejor visibilidad */}
+      {showToast && (
+        <div className="fixed top-0 right-0 z-50 p-4 pointer-events-none">
+          <div className={`max-w-sm bg-white rounded-lg shadow-xl p-4 transition-all duration-300 transform pointer-events-auto ${
+            showToast ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
+          }`}
+          style={{
+            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+          }}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                {toastType === 'success' ? (
+                  <div className="bg-green-100 rounded-full p-2 mr-3">
+                    <svg className="text-green-500 text-lg w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                ) : (
+                  <div className="bg-red-100 rounded-full p-2 mr-3">
+                    <svg className="text-red-500 text-lg w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </div>
+                )}
+                <p className="text-sm font-medium text-gray-900">{toastMessage}</p>
+              </div>
+              <button
+                onClick={() => setShowToast(false)}
+                className="ml-4 text-gray-400 hover:text-gray-600 transition-colors duration-200 bg-gray-100 hover:bg-gray-200 rounded-full p-1"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
           </div>
         </div>
