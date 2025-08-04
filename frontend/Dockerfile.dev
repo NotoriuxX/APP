@@ -8,6 +8,7 @@ COPY package*.json ./
 RUN npm cache clean --force
 RUN rm -rf node_modules package-lock.json
 RUN npm install --legacy-peer-deps --force
+RUN npm install chart.js react-chartjs-2 --force
 
 COPY . .
 EXPOSE 3000

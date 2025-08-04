@@ -7,7 +7,7 @@ import { ModalsProvider } from '@mantine/modals';
 import ForgotPassword from './pages/auth/ForgotPassword';
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
-import AdminDashboard from './pages/inventory/Dashboard';
+import Dashboard from './pages/inventory/Dashboard';
 import Inicio from './pages/Inicio';
 import InventoryWorker from './pages/inventory/InventoryWorker';
 import PhotocopyPage from './pages/inventory/photocopy/PhotocopyPage.jsx';
@@ -18,6 +18,7 @@ import TopBar from './pages/TopBar';
 import ProtectedRoute from './components/ProtectedRoute';
 
 import { SearchProvider } from './components/SearchContext';
+import { ToastProvider } from './components/ToastContext';
 
 function AppContent() {
   const location = useLocation();
@@ -67,7 +68,11 @@ function AppContent() {
                 <Settings />
               </ProtectedRoute>
             } />
-            <Route path="/admindashboard" element={<AdminDashboard />} />
+            <Route path="/admindashboard" element={
+              <ProtectedRoute permission="graficos" moduleName="Dashboard">
+                <Dashboard />
+              </ProtectedRoute>
+            } />
 
             {/* Rutas de autenticación (sin layout) */}
             <Route path="/login" element={<Login />} />
@@ -86,7 +91,9 @@ export default function App() {
       <ModalsProvider modalRootElement={document.getElementById('modal-root')}>
         <SearchProvider>
           <Router>
-            <AppContent />
+            <ToastProvider>
+              <AppContent />
+            </ToastProvider>
           </Router>
         </SearchProvider>
       </ModalsProvider>

@@ -9,6 +9,8 @@ const trabajadoresAvanzadoRoutes = require("./routes/trabajadores-avanzado");
 const authRoutes = require("./routes/auth");
 const estadosRouter = require('./routes/estados');
 const photocopyRoutes = require('./routes/photocopies');
+const dashboardImprRouter = require('./routes/dashboardImpresiones');
+const configuracionRouter = require('./routes/configuracion');
 const authRouter = require('./routes/auth');
 const gruposRouter = require('./routes/grupos');
 const permisosRouter = require('./routes/permisos');
@@ -52,6 +54,8 @@ app.use('/api', authRouter);
 app.use('/api', gruposRouter);
 app.use('/api/permisos', permisosRouter);
 app.use('/api/roles', rolesRouter);
+app.use('/api/dashboard/impresiones', dashboardImprRouter);
+app.use('/api/configuracion', configuracionRouter);
 
 // Inicialización del servidor
 app.listen(PORT, () => {

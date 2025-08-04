@@ -5,6 +5,7 @@ import {
   FaCheckCircle, FaTimes,
   FaSort, FaSortUp, FaSortDown
 } from 'react-icons/fa';
+import { useToast } from '../../../components/ToastContext';
 
 const PhotocopyPage = () => {
   // 1. Estado para el orden
@@ -39,35 +40,16 @@ const PhotocopyPage = () => {
     comentario: ''
   });
 
-  // Estados para el toast
-  const [showToast, setShowToast] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
-  const [toastType, setToastType] = useState('success'); // 'success' o 'error'
-
   // Estado para controlar las animaciones CRUD
   const [animatedRows, setAnimatedRows] = useState(new Set());
   const [lastOperation, setLastOperation] = useState(null); // 'add', 'update', 'delete'
 
-  // Función para mostrar toast - en esquina superior derecha
+  // Usar el hook de toast global
+  const toast = useToast();
+  
+  // Función para mostrar toast usando el sistema global
   const showToastMessage = (message, type = 'success') => {
-    // Primero aseguramos que cualquier toast previo se cierre
-    setShowToast(false);
-    
-    // Luego de un pequeño delay, mostramos el nuevo toast
-    setTimeout(() => {
-      setToastMessage(message);
-      setToastType(type);
-      setShowToast(true);
-      
-      // Reproducir un sonido de notificación (opcional)
-      // const audio = new Audio('/notification-sound.mp3');
-      // audio.play().catch(e => console.log('Error reproduciendo sonido:', e));
-      
-      // Ocultar el toast después de 4 segundos para dar tiempo suficiente de lectura
-      setTimeout(() => {
-        setShowToast(false);
-      }, 4000);
-    }, 100);
+    toast[type](message, 4000);
   };
 
   const itemsPerPageOptions = [5, 10, 25, 50];
@@ -1276,38 +1258,7 @@ const PhotocopyPage = () => {
           </div>
         )}
 
-        {/* Toast para mensajes - Esquina superior derecha con mejor visibilidad */}
-        {showToast && (
-          <div className="fixed top-0 right-0 z-50 p-4 pointer-events-none">
-            <div className={`max-w-sm bg-white rounded-lg shadow-xl p-4 transition-all duration-300 transform pointer-events-auto ${
-              showToast ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
-            }`}
-            style={{
-              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
-            }}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  {toastType === 'success' ? (
-                    <div className="bg-green-100 rounded-full p-2 mr-3">
-                      <FaCheckCircle className="text-green-500 text-lg" />
-                    </div>
-                  ) : (
-                    <div className="bg-red-100 rounded-full p-2 mr-3">
-                      <FaTimes className="text-red-500 text-lg" />
-                    </div>
-                  )}
-                  <p className="text-sm font-medium text-gray-900">{toastMessage}</p>
-                </div>
-                <button
-                  onClick={() => setShowToast(false)}
-                  className="ml-4 text-gray-400 hover:text-gray-600 transition-colors duration-200 bg-gray-100 hover:bg-gray-200 rounded-full p-1"
-                >
-                  <FaTimes className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Los toast ahora se manejan a través del ToastContext */}
       </div>
     </div>
   );

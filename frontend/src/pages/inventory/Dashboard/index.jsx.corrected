@@ -1,0 +1,928 @@
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement
+} from 'chart.js';
+import { Line, Bar, Doughnut } from 'react-chartjs-2';
+
+// Registrar componentes de Chart.js
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement
+);
+
+const Dashboard = () => {
+  // Estados para la aplicación
+  const [filterPeriod, setFilterPeriod] = useState('ultimos30');
+  const [customDateFrom, setCustomDateFrom] = useState('');
+  const [customDateTo, setCustomDateTo] = useState('');
+  const [stats, setStats] = useState({
+    general: {
+      total_registros: 0,
+      total_copias: 0,
+      total_bn: 0,
+      total_color: 0
+    },
+    porDia: [],
+    porUsuario: []
+  });
+  const [precios, setPrecios] = useState({
+    precio_bn: 15,
+    precio_color: 50,
+    precio_hoja: 5,
+    fotocopia_gracia_bn: 1,
+    fotocopia_gracia_color: 1
+  });
+  const [actividad, setActividad] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showPreciosModal, setShowPreciosModal] = useState(false);
+  const [modalAnimating, setModalAnimating] = useState(false);
+  const [editingPrecios, setEditingPrecios] = useState({});
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('success');
+
+  // API URL
+  const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3300';
+
+  // Función para mostrar toast
+  const showToastMessage = (message, type = 'success') => {
+    setToastMessage(message);
+    setToastType(type);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+  };
+
+  // Función para obtener fechas según filtro
+  const getDateRange = useCallback(() => {
+    const today = new Date();
+    const todayFormatted = today.toISOString().split('T')[0]; // YYYY-MM-DD
+    
+    switch (filterPeriod) {
+      case 'hoy':
+        return { desde: todayFormatted, hasta: todayFormatted };
+      case 'ayer': {
+        const yesterday = new Date(today);
+        yesterday.setDate(today.getDate() - 1);
+        const yesterdayFormatted = yesterday.toISOString().split('T')[0];
+        return { desde: yesterdayFormatted, hasta: yesterdayFormatted };
+      }
+      case 'semana': {
+        const weekAgo = new Date(today);
+        weekAgo.setDate(today.getDate() - 7);
+        const weekAgoFormatted = weekAgo.toISOString().split('T')[0];
+        return { desde: weekAgoFormatted, hasta: todayFormatted };
+      }
+      case 'ultimos30': {
+        const monthAgo = new Date(today);
+        monthAgo.setDate(today.getDate() - 30);
+        const monthAgoFormatted = monthAgo.toISOString().split('T')[0];
+        return { desde: monthAgoFormatted, hasta: todayFormatted };
+      }
+      case 'mes': {
+        const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+        const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        return { 
+          desde: firstDay.toISOString().split('T')[0], 
+          hasta: lastDay.toISOString().split('T')[0] 
+        };
+      }
+      case 'personalizado':
+        return { desde: customDateFrom, hasta: customDateTo };
+      default:
+        return { desde: null, hasta: null };
+    }
+  }, [filterPeriod, customDateFrom, customDateTo]);
+
+  // Función para obtener estadísticas
+  const fetchStats = useCallback(async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token');
+      const { desde, hasta } = getDateRange();
+      
+      // Construir URL con parámetros de filtro
+      let url = `${API_URL}/api/dashboard/impresiones/estadisticas`;
+      const params = [];
+      if (desde) params.push(`desde=${desde}`);
+      if (hasta) params.push(`hasta=${hasta}`);
+      if (params.length > 0) {
+        url += '?' + params.join('&');
+      }
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      setStats(data);
+    } catch (error) {
+      console.error('Error al cargar estadísticas:', error);
+      showToastMessage('Error al cargar estadísticas', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [API_URL, getDateRange]);
+
+  // Función para obtener configuración de precios
+  const fetchPrecios = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/dashboard/impresiones/precios`, {
+        method: 'GET',
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      setPrecios(data);
+      setEditingPrecios(data);
+    } catch (error) {
+      console.error('Error al cargar precios:', error);
+    }
+  }, [API_URL]);
+
+  // Función para obtener historial de actividad
+  const fetchActividad = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/dashboard/impresiones/actividad`, {
+        method: 'GET',
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      setActividad(data);
+    } catch (error) {
+      console.error('Error al cargar actividad:', error);
+    }
+  }, [API_URL]);
+
+  // Función para guardar configuración de precios
+  const handleSavePrecios = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/dashboard/impresiones/precios`, {
+        method: 'POST',
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(editingPrecios)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
+      }
+      
+      setPrecios(editingPrecios);
+      handleCloseModal();
+      showToastMessage('Precios actualizados correctamente');
+    } catch (error) {
+      console.error('Error al guardar precios:', error);
+      showToastMessage('Error al guardar precios', 'error');
+    }
+  };
+
+  // Funciones para manejar el modal
+  const handleOpenModal = () => {
+    setShowPreciosModal(true);
+    setModalAnimating(true);
+    setTimeout(() => setModalAnimating(false), 300);
+  };
+  
+  const handleCloseModal = () => {
+    setModalAnimating(true);
+    setTimeout(() => {
+      setShowPreciosModal(false);
+      setModalAnimating(false);
+    }, 300);
+  };
+
+  // Calcular costos totales
+  const costoTotal = useMemo(() => {
+    // Calcular costos considerando copias de gracia
+    const copiasBN = Math.max(0, stats.general.total_bn - precios.fotocopia_gracia_bn);
+    const copiasColor = Math.max(0, stats.general.total_color - precios.fotocopia_gracia_color);
+    
+    // Costo por copias
+    const costoBN = copiasBN * precios.precio_bn;
+    const costoColor = copiasColor * precios.precio_color;
+    
+    // Costo por hojas (total de hojas = hojas a una cara + hojas a doble cara)
+    const totalHojas = stats.general.total_hojas || stats.general.total_copias;
+    const costoHojas = totalHojas * precios.precio_hoja;
+    
+    // Costo total
+    return costoBN + costoColor + costoHojas;
+  }, [stats, precios]);
+
+  // Preparar datos para tablas (mantener para compatibilidad)
+  const datosActividad = useMemo(() => {
+    if (!stats.porDia || stats.porDia.length === 0) {
+      return [];
+    }
+    
+    return stats.porDia.map(day => ({
+      fecha: new Date(day.fecha).toLocaleDateString('es-CL'),
+      bn: day.bn,
+      color: day.color,
+      total: day.copias
+    }));
+  }, [stats.porDia]);
+  
+  // Datos para gráficos
+  const chartDataActividad = useMemo(() => {
+    if (!stats.porDia || stats.porDia.length === 0) {
+      return { labels: [], datasets: [] };
+    }
+    
+    return {
+      labels: stats.porDia.map(day => {
+        const fecha = new Date(day.fecha);
+        return `${fecha.getDate()}/${fecha.getMonth() + 1}`;
+      }),
+      datasets: [
+        {
+          label: 'B/N',
+          data: stats.porDia.map(day => day.bn),
+          backgroundColor: 'rgba(75, 85, 99, 0.2)',
+          borderColor: 'rgb(75, 85, 99)',
+          borderWidth: 2,
+          pointBackgroundColor: 'rgb(75, 85, 99)',
+          tension: 0.2
+        },
+        {
+          label: 'Color',
+          data: stats.porDia.map(day => day.color),
+          backgroundColor: 'rgba(20, 184, 166, 0.2)',
+          borderColor: 'rgb(20, 184, 166)',
+          borderWidth: 2,
+          pointBackgroundColor: 'rgb(20, 184, 166)',
+          tension: 0.2
+        },
+        {
+          label: 'Hojas',
+          data: stats.porDia.map(day => day.total_hojas),
+          backgroundColor: 'rgba(16, 185, 129, 0.1)', // Verde claro
+          borderColor: 'rgb(16, 185, 129)',
+          borderWidth: 1,
+          pointBackgroundColor: 'rgb(16, 185, 129)',
+          tension: 0.2,
+          borderDash: [5, 5],
+          fill: false
+        }
+      ]
+    };
+  }, [stats.porDia]);
+
+  const chartOptionsTendencia = {
+    responsive: true,
+    plugins: {
+      legend: { position: 'top' },
+      title: {
+        display: true,
+        text: 'Tendencia de Uso de Fotocopias',
+        font: { size: 16 }
+      },
+      tooltip: {
+        callbacks: {
+          label: function(context) {
+            const label = context.dataset.label || '';
+            const value = context.parsed.y || 0;
+            if (label === 'Hojas') {
+              return `${label}: ${value} hojas`;
+            }
+            return `${label}: ${value} copias`;
+          }
+        }
+      }
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        title: {
+          display: true,
+          text: 'Cantidad de Copias'
+        }
+      },
+      x: {
+        title: {
+          display: true,
+          text: 'Fecha'
+        }
+      }
+    },
+    interaction: {
+      intersect: false,
+      mode: 'index'
+    }
+  };
+
+  const datosDistribucion = useMemo(() => {
+    const totalCopias = stats.general.total_bn + stats.general.total_color;
+    const porcentajeBN = totalCopias > 0 ? Math.round((stats.general.total_bn / totalCopias) * 100) : 0;
+    const porcentajeColor = totalCopias > 0 ? Math.round((stats.general.total_color / totalCopias) * 100) : 0;
+    
+    return [
+      { tipo: 'B/N', cantidad: stats.general.total_bn, porcentaje: porcentajeBN },
+      { tipo: 'Color', cantidad: stats.general.total_color, porcentaje: porcentajeColor }
+    ];
+  }, [stats.general]);
+  
+  const chartDataDistribucion = useMemo(() => {
+    return {
+      labels: ['B/N', 'Color'],
+      datasets: [
+        {
+          data: [stats.general.total_bn, stats.general.total_color],
+          backgroundColor: [
+            'rgb(75, 85, 99)',
+            'rgb(20, 184, 166)'
+          ],
+          borderColor: [
+            'rgb(75, 85, 99)',
+            'rgb(20, 184, 166)'
+          ],
+          borderWidth: 1,
+          hoverOffset: 10
+        }
+      ]
+    };
+  }, [stats.general]);
+
+  const chartOptionsDistribucion = {
+    responsive: true,
+    plugins: {
+      legend: { position: 'top' },
+      title: {
+        display: true,
+        text: 'Distribución por Tipo',
+        font: { size: 16 }
+      },
+      tooltip: {
+        callbacks: {
+          label: function(context) {
+            const label = context.label || '';
+            const value = context.raw || 0;
+            const total = context.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+            const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+            return `${label}: ${value} (${percentage}%)`;
+          }
+        }
+      }
+    }
+  };
+
+  // Cargar datos al iniciar y cuando cambian filtros
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
+
+  useEffect(() => {
+    fetchPrecios();
+    fetchActividad();
+  }, [fetchPrecios, fetchActividad]);
+
+  // Formatear moneda chilena
+  const formatCurrency = (value) => {
+    return new Intl.NumberFormat('es-CL', { 
+      style: 'currency', 
+      currency: 'CLP',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(value);
+  };
+
+  // Formatear fecha y hora
+  const formatDateTime = (dateString) => {
+    if (!dateString) return '';
+    
+    const date = new Date(dateString);
+    
+    // Formatear como DD/MM/YYYY HH:mm:ss
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    
+    return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+  };
+
+  // Obtener ícono para el tipo de acción
+  const getActionIcon = (action) => {
+    switch (action) {
+      case 'CREAR':
+        return '➕';
+      case 'ACTUALIZAR':
+        return '✏️';
+      case 'ELIMINAR':
+        return '🗑️';
+      default:
+        return '📝';
+    }
+  };
+
+  return (
+    <div className="px-6 py-8 bg-gray-50 min-h-screen">
+      {/* Cabecera con título y filtros */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">Dashboard de Impresiones</h1>
+          <p className="text-gray-600">Monitoreo y estadísticas del sistema de fotocopias</p>
+        </div>
+        
+        {/* Filtros de período */}
+        <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-lg shadow-sm">
+          <select 
+            value={filterPeriod} 
+            onChange={e => setFilterPeriod(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+          >
+            <option value="hoy">Hoy</option>
+            <option value="ayer">Ayer</option>
+            <option value="semana">Últimos 7 días</option>
+            <option value="ultimos30">Últimos 30 días</option>
+            <option value="mes">Mes actual</option>
+            <option value="personalizado">Personalizado</option>
+          </select>
+          
+          {filterPeriod === 'personalizado' && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={customDateFrom}
+                onChange={e => setCustomDateFrom(e.target.value)}
+                className="px-2 py-1 border border-gray-300 rounded-md text-sm"
+              />
+              <span className="text-gray-500">a</span>
+              <input
+                type="date"
+                value={customDateTo}
+                onChange={e => setCustomDateTo(e.target.value)}
+                className="px-2 py-1 border border-gray-300 rounded-md text-sm"
+              />
+              <button
+                onClick={fetchStats}
+                className="px-3 py-1 bg-teal-600 text-white rounded-md text-sm hover:bg-teal-700 transition"
+              >
+                Aplicar
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Tarjetas de estadísticas principales */}
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
+        <div className="bg-white rounded-lg shadow-md p-6 flex items-start justify-between">
+          <div>
+            <p className="text-sm text-gray-500 font-medium">Total de Copias</p>
+            <p className="text-2xl font-bold mt-1">{stats.general.total_copias.toLocaleString()}</p>
+            <p className="text-xs text-gray-500 mt-1">
+              {stats.general.total_registros} registros
+            </p>
+          </div>
+          <div className="p-3 rounded-full bg-gray-100 text-gray-700">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+            </svg>
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-lg shadow-md p-6 flex items-start justify-between">
+          <div>
+            <p className="text-sm text-gray-500 font-medium">Total de Hojas</p>
+            <p className="text-2xl font-bold mt-1">{stats.general.total_hojas?.toLocaleString() || stats.general.total_copias.toLocaleString()}</p>
+            <p className="text-xs text-gray-500 mt-1">
+              {stats.general.total_doble_hoja?.toLocaleString() || 0} a doble cara
+            </p>
+          </div>
+          <div className="p-3 rounded-full bg-green-100 text-green-700">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-lg shadow-md p-6 flex items-start justify-between">
+          <div>
+            <p className="text-sm text-gray-500 font-medium">Copias B/N</p>
+            <p className="text-2xl font-bold mt-1">{stats.general.total_bn.toLocaleString()}</p>
+            <p className="text-xs text-gray-500 mt-1">
+              {stats.general.total_copias > 0 
+                ? Math.round((stats.general.total_bn / stats.general.total_copias) * 100) 
+                : 0}% del total
+            </p>
+          </div>
+          <div className="p-3 rounded-full bg-gray-100 text-gray-700">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-lg shadow-md p-6 flex items-start justify-between">
+          <div>
+            <p className="text-sm text-gray-500 font-medium">Copias Color</p>
+            <p className="text-2xl font-bold mt-1">{stats.general.total_color.toLocaleString()}</p>
+            <p className="text-xs text-gray-500 mt-1">
+              {stats.general.total_copias > 0 
+                ? Math.round((stats.general.total_color / stats.general.total_copias) * 100) 
+                : 0}% del total
+            </p>
+          </div>
+          <div className="p-3 rounded-full bg-gray-100 text-gray-700">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+            </svg>
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-lg shadow-md p-6 flex items-start justify-between">
+          <div>
+            <p className="text-sm text-gray-500 font-medium">Costo Estimado</p>
+            <p className="text-2xl font-bold mt-1 text-teal-600">{formatCurrency(costoTotal)}</p>
+            <div className="flex mt-1 cursor-pointer" onClick={handleOpenModal}>
+              <p className="text-xs text-teal-600 hover:underline">
+                Configurar Precios
+              </p>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 ml-1 text-teal-600 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+              </svg>
+            </div>
+          </div>
+          <div className="p-3 rounded-full bg-teal-100 text-teal-600">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      {/* Gráficos de estadísticas */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        {/* Gráfico de tendencia por día */}
+        <div className="bg-white p-6 rounded-lg shadow-md lg:col-span-2">
+          <h3 className="text-lg font-semibold mb-4">Tendencia de Uso de Fotocopias</h3>
+          <div className="h-80">
+            {stats.porDia && stats.porDia.length > 0 ? (
+              <Line 
+                data={chartDataActividad} 
+                options={chartOptionsTendencia}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-gray-500">
+                No hay datos disponibles
+              </div>
+            )}
+          </div>
+        </div>
+        
+        {/* Gráficos de distribución */}
+        <div className="bg-white p-6 rounded-lg shadow-md">
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold mb-4">Distribución por Tipo</h3>
+            <div className="h-48 flex items-center justify-center">
+              {stats.general.total_copias > 0 ? (
+                <Doughnut 
+                  data={chartDataDistribucion} 
+                  options={chartOptionsDistribucion}
+                />
+              ) : (
+                <div className="text-gray-500">No hay datos disponibles</div>
+              )}
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-4 text-center">
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <p className="text-sm text-gray-500">B/N</p>
+                <p className="text-xl font-semibold">{stats.general.total_bn}</p>
+              </div>
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <p className="text-sm text-gray-500">Color</p>
+                <p className="text-xl font-semibold">{stats.general.total_color}</p>
+              </div>
+            </div>
+          </div>
+          
+          {/* Gráfico de distribución por caras */}
+          <div>
+            <h3 className="text-lg font-semibold mb-4">Distribución por Caras</h3>
+            <div className="h-48 flex items-center justify-center">
+              {stats.general.total_copias > 0 ? (
+                <Doughnut 
+                  data={{
+                    labels: ['Una Cara', 'Doble Cara'],
+                    datasets: [{
+                      data: [stats.general.total_una_hoja, stats.general.total_doble_hoja],
+                      backgroundColor: ['rgb(99, 102, 241)', 'rgb(139, 92, 246)'],
+                      borderColor: ['rgb(99, 102, 241)', 'rgb(139, 92, 246)'],
+                      borderWidth: 1,
+                      hoverOffset: 10
+                    }]
+                  }}
+                  options={{
+                    responsive: true,
+                    plugins: {
+                      legend: { position: 'top' },
+                      tooltip: {
+                        callbacks: {
+                          label: function(context) {
+                            const label = context.label || '';
+                            const value = context.raw || 0;
+                            const total = context.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+                            const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                            return `${label}: ${value} (${percentage}%)`;
+                          }
+                        }
+                      }
+                    }
+                  }}
+                />
+              ) : (
+                <div className="text-gray-500">No hay datos disponibles</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Sección de gastos y actividad reciente */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        {/* Sección de gastos */}
+        <div className="bg-white p-6 rounded-lg shadow-md lg:col-span-2">
+          <h3 className="text-lg font-semibold mb-4">Desglose de Gastos</h3>
+          
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <p className="text-sm text-gray-500">Gasto en Copias B/N</p>
+                <p className="text-xl font-semibold text-gray-800">
+                  {formatCurrency(Math.max(0, stats.general.total_bn - precios.fotocopia_gracia_bn) * precios.precio_bn)}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {stats.general.total_bn} copias ({precios.fotocopia_gracia_bn} gratis)
+                </p>
+              </div>
+              
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <p className="text-sm text-gray-500">Gasto en Copias Color</p>
+                <p className="text-xl font-semibold text-gray-800">
+                  {formatCurrency(Math.max(0, stats.general.total_color - precios.fotocopia_gracia_color) * precios.precio_color)}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {stats.general.total_color} copias ({precios.fotocopia_gracia_color} gratis)
+                </p>
+              </div>
+              
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <p className="text-sm text-gray-500">Gasto en Hojas</p>
+                <p className="text-xl font-semibold text-gray-800">
+                  {formatCurrency((stats.general.total_hojas || stats.general.total_copias) * precios.precio_hoja)}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {stats.general.total_hojas || stats.general.total_copias} hojas utilizadas
+                </p>
+              </div>
+            </div>
+            
+            <div className="bg-teal-50 p-4 rounded-lg border border-teal-100">
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="text-sm font-medium text-teal-800">Gasto Total</p>
+                  <p className="text-2xl font-bold text-teal-700">{formatCurrency(costoTotal)}</p>
+                </div>
+                <div>
+                  <button 
+                    onClick={handleOpenModal} 
+                    className="px-3 py-1 bg-teal-600 text-white rounded-md text-sm hover:bg-teal-700 transition flex items-center"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                    Configurar Precios
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Actividad reciente */}
+        <div className="bg-white p-6 rounded-lg shadow-md overflow-hidden">
+          <h3 className="text-lg font-semibold mb-4 flex justify-between items-center">
+            <span>Actividad Reciente</span>
+            <span className="text-xs font-normal text-gray-500">
+              {actividad.length} registros
+            </span>
+          </h3>
+          
+          <div className="max-h-80 overflow-y-auto pr-2">
+            <div className="space-y-4">
+              {actividad.map(item => (
+                <div key={item.id} className="flex gap-3 pb-3 border-b border-gray-100">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-teal-100 flex items-center justify-center text-teal-700">
+                    {getActionIcon(item.accion)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {item.descripcion}
+                    </p>
+                    <div className="flex justify-between mt-1">
+                      <p className="text-xs text-gray-500">
+                        {item.usuario_nombre}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {formatDateTime(item.fecha)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              
+              {actividad.length === 0 && (
+                <p className="text-center text-gray-500 py-4">
+                  No hay registros de actividad reciente
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Modal de configuración de precios */}
+      {showPreciosModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-gray-600 bg-opacity-50 flex items-center justify-center p-4">
+          <div 
+            className={`bg-white rounded-lg shadow-xl max-w-md w-full transform transition-all ${modalAnimating ? 'scale-95 opacity-0' : 'scale-100 opacity-100'}`}
+          >
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-gray-900">Configuración de Precios</h3>
+                <button
+                  onClick={handleCloseModal}
+                  className="text-gray-400 hover:text-gray-500 focus:outline-none"
+                >
+                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            
+            <div className="px-6 py-4">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Precio por copia B/N (CLP)
+                  </label>
+                  <input
+                    type="number"
+                    value={editingPrecios.precio_bn || ''}
+                    onChange={e => setEditingPrecios({...editingPrecios, precio_bn: parseInt(e.target.value) || 0})}
+                    min="0"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Precio por copia a Color (CLP)
+                  </label>
+                  <input
+                    type="number"
+                    value={editingPrecios.precio_color || ''}
+                    onChange={e => setEditingPrecios({...editingPrecios, precio_color: parseInt(e.target.value) || 0})}
+                    min="0"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Precio por hoja (CLP)
+                  </label>
+                  <input
+                    type="number"
+                    value={editingPrecios.precio_hoja || ''}
+                    onChange={e => setEditingPrecios({...editingPrecios, precio_hoja: parseInt(e.target.value) || 0})}
+                    min="0"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Copias de gracia B/N
+                  </label>
+                  <input
+                    type="number"
+                    value={editingPrecios.fotocopia_gracia_bn || ''}
+                    onChange={e => setEditingPrecios({...editingPrecios, fotocopia_gracia_bn: parseInt(e.target.value) || 0})}
+                    min="0"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Copias de gracia Color
+                  </label>
+                  <input
+                    type="number"
+                    value={editingPrecios.fotocopia_gracia_color || ''}
+                    onChange={e => setEditingPrecios({...editingPrecios, fotocopia_gracia_color: parseInt(e.target.value) || 0})}
+                    min="0"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  />
+                </div>
+              </div>
+            </div>
+            
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={handleCloseModal}
+                className="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 mr-3"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSavePrecios}
+                className="px-4 py-2 bg-teal-600 border border-transparent rounded-md text-sm font-medium text-white hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              >
+                Guardar Cambios
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Toast de notificación */}
+      {showToast && (
+        <div className={`fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg ${toastType === 'success' ? 'bg-green-500' : 'bg-red-500'} text-white`}>
+          <div className="flex items-center">
+            {toastType === 'success' ? (
+              <svg className="w-6 h-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            ) : (
+              <svg className="w-6 h-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            )}
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
+      
+      {loading && (
+        <div className="fixed inset-0 bg-gray-900 bg-opacity-30 flex items-center justify-center z-50">
+          <div className="bg-white p-4 rounded-lg shadow-lg flex items-center">
+            <div className="w-6 h-6 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mr-3"></div>
+            <p className="text-gray-700">Cargando estadísticas...</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Dashboard;
