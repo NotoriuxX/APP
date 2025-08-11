@@ -43,31 +43,69 @@ const Dashboard = () => {
     general: {
       total_registros: 0,
       total_copias: 0,
+      total_paginas: 0,
       total_bn: 0,
       total_color: 0,
       total_doble_hoja: 0,
       total_una_hoja: 0,
       total_hojas: 0,
-      usuarios_unicos: 0
+      usuarios_unicos: 0,
+      costo_total_hojas: 0,
+      // Campos nuevos agregados para el cálculo mejorado
+      costo_total: 0,
+      costo_impresiones_bn: 0,
+      costo_impresiones_color: 0,
+      recargo_doble_bn: 0,
+      recargo_doble_color: 0,
+      costo_total_impresiones: 0,
+      impresiones_gratis_bn: 0,
+      impresiones_gratis_color: 0,
+      impresiones_cobrables_bn: 0,
+      impresiones_cobrables_color: 0,
+      total_impresiones_bn: 0,
+      total_impresiones_color: 0
     },
     porDia: [],
     porMes: [],
     porUsuario: [],
+    porTipoHoja: [],
     analisis: null
   });
+  const [showCostDetail, setShowCostDetail] = useState(false);
   const [analisisAvanzado, setAnalisisAvanzado] = useState(null);
   const [precios, setPrecios] = useState({
-    precio_bn: 15,
-    precio_color: 50,
-    precio_hoja: 5,
-    fotocopia_gracia_bn: 1,
-    fotocopia_gracia_color: 1
+    configuracion: {
+      precio_bn: 15,
+      precio_color: 50,
+      precio_hoja: 5,
+      fotocopia_gracia_bn: 1,
+      fotocopia_gracia_color: 1
+    },
+    tiposHoja: []
   });
   const [actividad, setActividad] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showPreciosModal, setShowPreciosModal] = useState(false);
   const [modalAnimating, setModalAnimating] = useState(false);
-  const [editingPrecios, setEditingPrecios] = useState({});
+  const [editingPrecios, setEditingPrecios] = useState({
+    configuracion: {},
+    tiposHoja: []
+  });
+  
+  // Estados para gestión de tipos de hojas
+  const [tiposHoja, setTiposHoja] = useState([]);
+  const [editingTipoHoja, setEditingTipoHoja] = useState(null);
+  const [showAddTipoHoja, setShowAddTipoHoja] = useState(false);
+  const [newTipoHoja, setNewTipoHoja] = useState({
+    nombre: '',
+    descripcion: '',
+    costo_unitario: ''
+  });
+  
+  // Estados para modal de confirmación
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmMessage, setConfirmMessage] = useState('');
+  const [confirmAction, setConfirmAction] = useState(null);
   
   // Estados para el sistema de reportes
   const [showReportModal, setShowReportModal] = useState(false);
@@ -95,6 +133,28 @@ const Dashboard = () => {
   // Función para mostrar toast que usa el nuevo sistema
   const showToastMessage = (message, type = 'success') => {
     toast[type](message, 4000);
+  };
+
+  // Función para mostrar modal de confirmación
+  const showConfirm = (message, action) => {
+    setConfirmMessage(message);
+    setConfirmAction(() => action);
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirm = () => {
+    if (confirmAction) {
+      confirmAction();
+    }
+    setShowConfirmModal(false);
+    setConfirmAction(null);
+    setConfirmMessage('');
+  };
+
+  const handleCancelConfirm = () => {
+    setShowConfirmModal(false);
+    setConfirmAction(null);
+    setConfirmMessage('');
   };
 
   // Función para obtener fechas según filtro
@@ -163,6 +223,7 @@ const Dashboard = () => {
       });
       
       if (!response.ok) {
+        console.error('❌ Error en respuesta:', response.status, response.statusText);
         throw new Error(`Error ${response.status}: ${response.statusText}`);
       }
       
@@ -240,9 +301,26 @@ const Dashboard = () => {
       
       const data = await response.json();
       setPrecios(data);
-      setEditingPrecios(data);
+      
+      // Inicializar editingPrecios con la configuración actual o valores por defecto
+      const configEditable = data.configuracion || {
+        precio_bn: 0,
+        precio_color: 0,
+        fotocopia_gracia_bn: 0,
+        fotocopia_gracia_color: 0
+      };
+      
+      setEditingPrecios(configEditable);
     } catch (error) {
       console.error('Error al cargar precios:', error);
+      // En caso de error, inicializar con valores por defecto
+      const defaultConfig = {
+        precio_bn: 0,
+        precio_color: 0,
+        fotocopia_gracia_bn: 0,
+        fotocopia_gracia_color: 0
+      };
+      setEditingPrecios(defaultConfig);
     }
   }, [API_URL]);
 
@@ -269,24 +347,57 @@ const Dashboard = () => {
     }
   }, [API_URL]);
 
-  // Función para guardar configuración de precios
-  const handleSavePrecios = async () => {
+  // Función para obtener tipos de hoja
+  const fetchTiposHoja = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${API_URL}/api/dashboard/impresiones/precios`, {
-        method: 'POST',
+      const response = await fetch(`${API_URL}/api/dashboard/impresiones/tipos-hoja`, {
+        method: 'GET',
         headers: { 
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(editingPrecios)
+        }
       });
       
       if (!response.ok) {
         throw new Error(`Error ${response.status}: ${response.statusText}`);
       }
       
-      setPrecios(editingPrecios);
+      const data = await response.json();
+      setTiposHoja(data || []);
+    } catch (error) {
+      console.error('Error al cargar tipos de hoja:', error);
+      showToastMessage('Error al cargar tipos de hoja', 'error');
+    }
+  }, [API_URL]);
+
+  // Función para guardar configuración de precios
+  const handleSavePrecios = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      
+      // Convertir strings a números antes de enviar
+      const preciosParaEnviar = {
+        precio_bn: parseFloat(editingPrecios.precio_bn) || 0,
+        precio_color: parseFloat(editingPrecios.precio_color) || 0,
+        fotocopia_gracia_bn: parseInt(editingPrecios.fotocopia_gracia_bn) || 0,
+        fotocopia_gracia_color: parseInt(editingPrecios.fotocopia_gracia_color) || 0
+      };
+      
+      const response = await fetch(`${API_URL}/api/dashboard/impresiones/precios`, {
+        method: 'POST',
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(preciosParaEnviar)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
+      }
+      
+      setPrecios({configuracion: preciosParaEnviar});
       handleCloseModal();
       showToastMessage('Precios actualizados correctamente');
     } catch (error) {
@@ -295,11 +406,116 @@ const Dashboard = () => {
     }
   };
 
+  // Funciones para manejar tipos de hojas
+  const handleAddTipoHoja = async () => {
+    if (!newTipoHoja.nombre.trim()) {
+      showToastMessage('El nombre es requerido', 'error');
+      return;
+    }
+    
+    if (!newTipoHoja.costo_unitario || parseFloat(newTipoHoja.costo_unitario) <= 0) {
+      showToastMessage('El costo unitario debe ser mayor a 0', 'error');
+      return;
+    }
+    
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/dashboard/impresiones/tipos-hoja`, {
+        method: 'POST',
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(newTipoHoja)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
+      }
+      
+      // Solo verificamos que la respuesta sea ok, luego recargamos la lista
+      await response.json();
+      // Recargar la lista completa para asegurar consistencia
+      await fetchTiposHoja();
+      setNewTipoHoja({ nombre: '', descripcion: '', costo_unitario: '' });
+      setShowAddTipoHoja(false);
+      showToastMessage('Tipo de hoja agregado correctamente');
+    } catch (error) {
+      console.error('Error al agregar tipo de hoja:', error);
+      showToastMessage('Error al agregar tipo de hoja', 'error');
+    }
+  };
+
+  const handleEditTipoHoja = async (tipoHoja) => {
+    if (!tipoHoja.nombre.trim()) {
+      showToastMessage('El nombre es requerido', 'error');
+      return;
+    }
+    
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/dashboard/impresiones/tipos-hoja/${tipoHoja.id}`, {
+        method: 'PUT',
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(tipoHoja)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
+      }
+      
+      // Recargar la lista completa para asegurar consistencia
+      await fetchTiposHoja();
+      setEditingTipoHoja(null);
+      showToastMessage('Tipo de hoja actualizado correctamente');
+    } catch (error) {
+      console.error('Error al editar tipo de hoja:', error);
+      showToastMessage('Error al editar tipo de hoja', 'error');
+    }
+  };
+
+  const handleDeleteTipoHoja = async (id) => {
+    const performDelete = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`${API_URL}/api/dashboard/impresiones/tipos-hoja/${id}`, {
+          method: 'DELETE',
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Error ${response.status}: ${response.statusText}`);
+        }
+        
+        // Recargar la lista completa para asegurar consistencia
+        await fetchTiposHoja();
+        showToastMessage('Tipo de hoja eliminado correctamente');
+      } catch (error) {
+        console.error('Error al eliminar tipo de hoja:', error);
+        showToastMessage('Error al eliminar tipo de hoja', 'error');
+      }
+    };
+
+    showConfirm(
+      '¿Estás seguro de que quieres eliminar este tipo de hoja? Esta acción no se puede deshacer.',
+      performDelete
+    );
+  };
+
   // Funciones para manejar el modal
   const handleOpenModal = () => {
     setShowPreciosModal(true);
     setModalAnimating(true);
     setTimeout(() => setModalAnimating(false), 300);
+    // Cargar datos al abrir el modal
+    fetchTiposHoja();
+    fetchPrecios();
   };
   
   const handleCloseModal = () => {
@@ -599,16 +815,27 @@ const Dashboard = () => {
 
   // Calcular costos totales
   const costoTotal = useMemo(() => {
-    // Calcular costos considerando copias de gracia
-    const copiasBN = Math.max(0, stats.general.total_bn - precios.fotocopia_gracia_bn);
-    const copiasColor = Math.max(0, stats.general.total_color - precios.fotocopia_gracia_color);
+    // Usar los costos calculados en el backend
+    if (stats.general.costo_total !== undefined) {
+      return parseFloat(stats.general.costo_total);
+    }
+    
+    // Si tenemos costo real de hojas desde el backend, usarlo
+    if (stats.general.costo_total_hojas) {
+      return parseFloat(stats.general.costo_total_hojas);
+    }
+    
+    // Fallback: Calcular costos considerando copias de gracia
+    const configuracion = precios.configuracion || precios;
+    const copiasBN = Math.max(0, stats.general.total_bn - (configuracion.fotocopia_gracia_bn || 0));
+    const copiasColor = Math.max(0, stats.general.total_color - (configuracion.fotocopia_gracia_color || 0));
     
     // Costo por copias
-    const costoBN = copiasBN * precios.precio_bn;
-    const costoColor = copiasColor * precios.precio_color;
+    const costoBN = copiasBN * (configuracion.precio_bn || 15);
+    const costoColor = copiasColor * (configuracion.precio_color || 50);
     
     // Costo por hojas
-    const costoHojas = stats.general.total_hojas * precios.precio_hoja;
+    const costoHojas = stats.general.total_hojas * (configuracion.precio_hoja || 5);
     
     // Costo total
     return costoBN + costoColor + costoHojas;
@@ -888,7 +1115,7 @@ const Dashboard = () => {
       </div>
 
       {/* Tarjetas de estadísticas principales */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6 mb-8">
         <div className="bg-white rounded-lg shadow-md p-6 flex items-start justify-between">
           <div>
             <p className="text-sm text-gray-500 font-medium">Total de Copias</p>
@@ -900,6 +1127,21 @@ const Dashboard = () => {
           <div className="p-3 rounded-full bg-gray-100 text-gray-700">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+            </svg>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-md p-6 flex items-start justify-between">
+          <div>
+            <p className="text-sm text-gray-500 font-medium">Total de Páginas</p>
+            <p className="text-2xl font-bold mt-1">{stats.general.total_paginas?.toLocaleString() || '0'}</p>
+            <p className="text-xs text-gray-500 mt-1">
+              Con multiplicadores
+            </p>
+          </div>
+          <div className="p-3 rounded-full bg-blue-100 text-blue-700">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           </div>
         </div>
@@ -954,10 +1196,11 @@ const Dashboard = () => {
         </div>
         
         <div className="bg-white rounded-lg shadow-md p-6 flex items-start justify-between">
-          <div>
+          <div className="flex-1">
             <p className="text-sm text-gray-500 font-medium">Costo Estimado</p>
             <p className="text-2xl font-bold mt-1 text-teal-600">{formatCurrency(costoTotal)}</p>
-            <div className="flex mt-1 cursor-pointer" onClick={handleOpenModal}>
+            
+            <div className="flex mt-2 cursor-pointer" onClick={handleOpenModal}>
               <p className="text-xs text-teal-600 hover:underline">
                 Configurar Precios
               </p>
@@ -966,10 +1209,92 @@ const Dashboard = () => {
               </svg>
             </div>
           </div>
-          <div className="p-3 rounded-full bg-teal-100 text-teal-600">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+          <div className="relative">
+            <div 
+              className="p-3 rounded-full bg-teal-100 text-teal-600 cursor-pointer transition-transform duration-200 hover:scale-110 hover:bg-teal-200"
+              onClick={() => setShowCostDetail(!showCostDetail)}
+              title="Ver desglose de costos"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            
+            {/* Mini modal flotante - Posición absoluta para no ocupar espacio */}
+            {showCostDetail && stats.general && stats.general.costo_total > 0 && (
+              <div className="absolute right-0 top-16 w-80 bg-white border border-gray-200 rounded-lg shadow-lg p-4 z-50">
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between text-gray-700 font-medium">
+                    <span>Desglose de Costos</span>
+                    <button 
+                      onClick={() => setShowCostDetail(false)}
+                      className="text-gray-400 hover:text-gray-600"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  
+                  <hr className="my-2" />
+                  
+                  <div className="flex justify-between text-gray-600">
+                    <span>Costo Hojas:</span>
+                    <span className="font-medium">{formatCurrency(stats.general.costo_total_hojas || 0)}</span>
+                  </div>
+                  
+                  {/* Impresiones B/N */}
+                  <div className="flex justify-between text-gray-600">
+                    <span>Impresiones B/N:</span>
+                    <span className="font-medium">{formatCurrency(stats.general.costo_impresiones_bn || 0)}</span>
+                  </div>
+                  <div className="text-xs text-gray-500 ml-4">
+                    ({stats.general.impresiones_cobrables_bn || 0} cobrables de {stats.general.total_impresiones_bn || 0} total)
+                  </div>
+                  
+                  {/* Impresiones Color */}
+                  <div className="flex justify-between text-gray-600">
+                    <span>Impresiones Color:</span>
+                    <span className="font-medium">{formatCurrency(stats.general.costo_impresiones_color || 0)}</span>
+                  </div>
+                  <div className="text-xs text-gray-500 ml-4">
+                    ({stats.general.impresiones_cobrables_color || 0} cobrables de {stats.general.total_impresiones_color || 0} total)
+                  </div>
+                  
+                  {/* Recargo doble cara */}
+                  {((stats.general.recargo_doble_bn || 0) + (stats.general.recargo_doble_color || 0)) > 0 && (
+                    <div className="flex justify-between text-gray-600">
+                      <span>Recargo Doble Cara:</span>
+                      <span className="font-medium">{formatCurrency((stats.general.recargo_doble_bn || 0) + (stats.general.recargo_doble_color || 0))}</span>
+                    </div>
+                  )}
+                  
+                  <hr className="my-2" />
+                  
+                  {/* Total de impresiones */}
+                  <div className="flex justify-between text-blue-600 font-semibold">
+                    <span>Total Impresiones:</span>
+                    <span>{formatCurrency(stats.general.costo_total_impresiones || 0)}</span>
+                  </div>
+                  
+                  {/* Total general */}
+                  <div className="flex justify-between text-teal-600 font-bold text-lg border-t pt-2">
+                    <span>Total General:</span>
+                    <span>{formatCurrency(stats.general.costo_total || 0)}</span>
+                  </div>
+                  
+                  {/* Impresiones gratis */}
+                  {((stats.general.impresiones_gratis_bn || 0) + (stats.general.impresiones_gratis_color || 0)) > 0 && (
+                    <div className="bg-green-50 p-2 rounded mt-2">
+                      <div className="flex justify-between text-green-700 text-sm">
+                        <span>🎁 Impresiones Gratis:</span>
+                        <span className="font-medium">{(stats.general.impresiones_gratis_bn || 0) + (stats.general.impresiones_gratis_color || 0)} copias</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -999,7 +1324,12 @@ const Dashboard = () => {
                     <p className="ml-2 text-sm text-gray-500">copias</p>
                   </div>
                   <p className="text-sm text-gray-600 mt-1">
-                    Costo: ${((stats?.general?.total_bn || 0) * (precios?.precio_bn || 0)).toLocaleString('es-CL')}
+                    Costo: {formatCurrency(stats?.general?.costo_impresiones_bn || 0)}
+                    {stats?.general?.config_aplicada && (
+                      <span className="text-green-600 text-xs ml-1">
+                        ({Math.max(0, (stats.general.config_aplicada.gracia_bn || 0) - (stats.general.total_impresiones_bn || 0))} gratis restantes)
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -1024,7 +1354,12 @@ const Dashboard = () => {
                     <p className="ml-2 text-sm text-gray-500">copias</p>
                   </div>
                   <p className="text-sm text-gray-600 mt-1">
-                    Costo: ${((stats?.general?.total_color || 0) * (precios?.precio_color || 0)).toLocaleString('es-CL')}
+                    Costo: {formatCurrency(stats?.general?.costo_impresiones_color || 0)}
+                    {stats?.general?.config_aplicada && (
+                      <span className="text-green-600 text-xs ml-1">
+                        ({Math.max(0, (stats.general.config_aplicada.gracia_color || 0) - (stats.general.total_impresiones_color || 0))} gratis restantes)
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -1049,7 +1384,7 @@ const Dashboard = () => {
                     <p className="ml-2 text-sm text-gray-500">hojas</p>
                   </div>
                   <p className="text-sm text-gray-600 mt-1">
-                    Costo: ${((stats?.general?.total_hojas || 0) * (precios?.precio_hoja || 0)).toLocaleString('es-CL')}
+                    Costo: {formatCurrency(stats?.general?.costo_total_hojas || 0)}
                   </p>
                 </div>
               </div>
@@ -1061,9 +1396,9 @@ const Dashboard = () => {
       
 
       {/* Gráficos de estadísticas */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        {/* Gráfico de tendencia por día */}
-        <div className="bg-white p-6 rounded-lg shadow-md lg:col-span-2">
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 mb-8">
+        {/* Gráfico de tendencia por día - span 2 columnas en xl */}
+        <div className="bg-white p-6 rounded-lg shadow-md lg:col-span-2 xl:col-span-3">
           <h3 className="text-lg font-semibold mb-4">Tendencia de Uso de Fotocopias</h3>
           <div className="h-80">
             {stats.porDia && stats.porDia.length > 0 ? (
@@ -1079,7 +1414,7 @@ const Dashboard = () => {
           </div>
         </div>
         
-        {/* Gráficos de distribución */}
+        {/* Distribución por Tipo */}
         <div className="bg-white p-6 rounded-lg shadow-md">
           <div className="mb-6">
             <h3 className="text-lg font-semibold mb-4">Distribución por Tipo</h3>
@@ -1104,46 +1439,165 @@ const Dashboard = () => {
               </div>
             </div>
           </div>
-          
-          {/* Gráfico de distribución por caras */}
-          <div>
-            <h3 className="text-lg font-semibold mb-4">Distribución por Caras</h3>
-            <div className="h-48 flex items-center justify-center">
-              {stats.general.total_copias > 0 ? (
-                <Doughnut 
-                  data={{
-                    labels: ['Una Cara', 'Doble Cara'],
-                    datasets: [{
-                      data: [stats.general.total_una_hoja, stats.general.total_doble_hoja],
-                      backgroundColor: ['rgb(99, 102, 241)', 'rgb(139, 92, 246)'],
-                      borderColor: ['rgb(99, 102, 241)', 'rgb(139, 92, 246)'],
-                      borderWidth: 1,
-                      hoverOffset: 10
-                    }]
-                  }}
-                  options={{
-                    responsive: true,
-                    plugins: {
-                      legend: { position: 'top' },
-                      tooltip: {
-                        callbacks: {
-                          label: function(context) {
-                            const label = context.label || '';
-                            const value = context.raw || 0;
-                            const total = context.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
-                            const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
-                            return `${label}: ${value} (${percentage}%)`;
-                          }
+        </div>
+        
+        {/* Distribución por Caras */}
+        <div className="bg-white p-6 rounded-lg shadow-md">
+          <h3 className="text-lg font-semibold mb-4">Distribución por Caras</h3>
+          <div className="h-48 flex items-center justify-center">
+            {stats.general.total_copias > 0 ? (
+              <Doughnut 
+                data={{
+                  labels: ['Una Cara', 'Doble Cara'],
+                  datasets: [{
+                    data: [stats.general.total_una_hoja, stats.general.total_doble_hoja],
+                    backgroundColor: ['rgb(20, 184, 166)', 'rgb(59, 130, 246)'],
+                    borderColor: ['rgb(20, 184, 166)', 'rgb(59, 130, 246)'],
+                    borderWidth: 1,
+                    hoverOffset: 10
+                  }]
+                }}
+                options={{
+                  responsive: true,
+                  plugins: {
+                    legend: { position: 'top' },
+                    tooltip: {
+                      callbacks: {
+                        label: function(context) {
+                          const label = context.label || '';
+                          const value = context.raw || 0;
+                          const total = context.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+                          const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                          return `${label}: ${value} (${percentage}%)`;
                         }
                       }
                     }
-                  }}
-                />
-              ) : (
-                <div className="text-gray-500">No hay datos disponibles</div>
-              )}
+                  }
+                }}
+              />
+            ) : (
+              <div className="text-gray-500">No hay datos disponibles</div>
+            )}
+          </div>
+          {/* Bloques de estadísticas por cara */}
+          <div className="mt-4 grid grid-cols-2 gap-4 text-center">
+            <div className="bg-gray-50 p-3 rounded-lg">
+              <p className="text-sm text-gray-500">Una Cara</p>
+              <p className="text-xl font-semibold">{stats.general.total_una_hoja}</p>
+            </div>
+            <div className="bg-gray-50 p-3 rounded-lg">
+              <p className="text-sm text-gray-500">Doble Cara</p>
+              <p className="text-xl font-semibold">{stats.general.total_doble_hoja}</p>
             </div>
           </div>
+        </div>
+
+        {/* Distribución por Hojas */}
+        <div className="bg-white p-6 rounded-lg shadow-md">
+          <h3 className="text-lg font-semibold mb-4">Distribución por Hojas</h3>
+          <div className="h-48 flex items-center justify-center">
+            {stats.porTipoHoja && stats.porTipoHoja.length > 0 ? (
+              <Doughnut 
+                data={{
+                  labels: stats.porTipoHoja.map(h => h.tipo_hoja_nombre || 'Sin nombre'),
+                  datasets: [{
+                    data: stats.porTipoHoja.map(h => parseFloat(h.total_hojas) || 0),
+                    backgroundColor: [
+                      'rgb(34, 197, 94)',   // Verde
+                      'rgb(249, 115, 22)',  // Naranja
+                      'rgb(168, 85, 247)',  // Púrpura elegante
+                      'rgb(236, 72, 153)',  // Rosa
+                      'rgb(14, 165, 233)',  // Azul cielo
+                      'rgb(99, 102, 241)',  // Índigo
+                      'rgb(245, 158, 11)',  // Ámbar
+                      'rgb(239, 68, 68)'    // Rojo
+                    ],
+                    borderColor: [
+                      'rgb(34, 197, 94)',
+                      'rgb(249, 115, 22)',
+                      'rgb(168, 85, 247)',
+                      'rgb(236, 72, 153)',
+                      'rgb(14, 165, 233)',
+                      'rgb(99, 102, 241)',
+                      'rgb(245, 158, 11)',
+                      'rgb(239, 68, 68)'
+                    ],
+                    borderWidth: 1,
+                    hoverOffset: 10
+                  }]
+                }}
+                options={{
+                  responsive: true,
+                  plugins: {
+                    legend: { 
+                      position: 'top',
+                      labels: {
+                        generateLabels: function(chart) {
+                          const data = chart.data;
+                          if (data.labels.length && data.datasets.length) {
+                            return data.labels.map((label, i) => {
+                              const value = Math.round(parseFloat(data.datasets[0].data[i]) || 0);
+                              return {
+                                text: `${label}: ${value}`,
+                                fillStyle: data.datasets[0].backgroundColor[i],
+                                hidden: false,
+                                index: i
+                              };
+                            });
+                          }
+                          return [];
+                        }
+                      }
+                    },
+                    tooltip: {
+                      callbacks: {
+                        label: function(context) {
+                          const label = context.label || '';
+                          const value = Math.round(parseFloat(context.raw) || 0);
+                          const hojaData = stats.porTipoHoja[context.dataIndex];
+                          const costo = parseFloat(hojaData?.costo_total_tipo || 0);
+                          const total = context.chart.data.datasets[0].data.reduce((a, b) => (parseFloat(a) || 0) + (parseFloat(b) || 0), 0);
+                          const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                          return [
+                            `${label}: ${value} hojas (${percentage}%)`,
+                            `Costo: ${formatCurrency(costo)}`
+                          ];
+                        }
+                      }
+                    }
+                  }
+                }}
+              />
+            ) : (
+              <div className="text-gray-500">No hay datos disponibles</div>
+            )}
+          </div>
+          {/* Lista compacta de tipos de hoja */}
+          {stats.porTipoHoja && stats.porTipoHoja.length > 0 && (
+            <div className="mt-4 space-y-2 max-h-32 overflow-y-auto">
+              {stats.porTipoHoja.map((hoja, index) => (
+                <div key={hoja.tipo_hoja_id} className="bg-gray-50 p-2 rounded-lg flex justify-between items-center">
+                  <div className="flex items-center">
+                    <div 
+                      className="w-3 h-3 rounded-full mr-2" 
+                      style={{
+                        backgroundColor: [
+                          'rgb(34, 197, 94)', 'rgb(249, 115, 22)', 'rgb(168, 85, 247)', 
+                          'rgb(236, 72, 153)', 'rgb(14, 165, 233)', 'rgb(99, 102, 241)',
+                          'rgb(245, 158, 11)', 'rgb(239, 68, 68)'
+                        ][index % 8]
+                      }}
+                    ></div>
+                    <span className="text-sm text-gray-700">{hoja.tipo_hoja_nombre || 'Sin nombre'}</span>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold">{Math.round(parseFloat(hoja.total_hojas) || 0)}</p>
+                    <p className="text-xs text-gray-500">{formatCurrency(parseFloat(hoja.costo_total_tipo) || 0)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1677,11 +2131,11 @@ const Dashboard = () => {
       {showPreciosModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-gray-600 bg-opacity-50 flex items-center justify-center p-4">
           <div 
-            className={`bg-white rounded-lg shadow-xl max-w-md w-full transform transition-all ${modalAnimating ? 'scale-95 opacity-0' : 'scale-100 opacity-100'}`}
+            className={`bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto transform transition-all ${modalAnimating ? 'scale-95 opacity-0' : 'scale-100 opacity-100'}`}
           >
             <div className="px-6 py-4 border-b border-gray-200">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-900">Configuración de Precios</h3>
+                <h3 className="text-lg font-semibold text-gray-900">Configuración de Precios y Tipos de Hoja</h3>
                 <button
                   onClick={handleCloseModal}
                   className="text-gray-400 hover:text-gray-500 focus:outline-none"
@@ -1694,7 +2148,11 @@ const Dashboard = () => {
             </div>
             
             <div className="px-6 py-4">
-              <div className="space-y-4">
+              <div className="space-y-8">
+                {/* Sección de Precios */}
+                <div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-4">Configuración de Precios</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Precio por copia B/N (CLP)
@@ -1702,8 +2160,10 @@ const Dashboard = () => {
                   <input
                     type="number"
                     value={editingPrecios.precio_bn || ''}
-                    onChange={e => setEditingPrecios({...editingPrecios, precio_bn: parseInt(e.target.value) || 0})}
+                    onChange={e => setEditingPrecios({...editingPrecios, precio_bn: e.target.value})}
                     min="0"
+                    step="0.01"
+                    placeholder="Ej: 15.50"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-teal-500"
                   />
                 </div>
@@ -1715,21 +2175,10 @@ const Dashboard = () => {
                   <input
                     type="number"
                     value={editingPrecios.precio_color || ''}
-                    onChange={e => setEditingPrecios({...editingPrecios, precio_color: parseInt(e.target.value) || 0})}
+                    onChange={e => setEditingPrecios({...editingPrecios, precio_color: e.target.value})}
                     min="0"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-teal-500"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Precio por hoja (CLP)
-                  </label>
-                  <input
-                    type="number"
-                    value={editingPrecios.precio_hoja || ''}
-                    onChange={e => setEditingPrecios({...editingPrecios, precio_hoja: parseInt(e.target.value) || 0})}
-                    min="0"
+                    step="0.01"
+                    placeholder="Ej: 50.00"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-teal-500"
                   />
                 </div>
@@ -1741,8 +2190,10 @@ const Dashboard = () => {
                   <input
                     type="number"
                     value={editingPrecios.fotocopia_gracia_bn || ''}
-                    onChange={e => setEditingPrecios({...editingPrecios, fotocopia_gracia_bn: parseInt(e.target.value) || 0})}
+                    onChange={e => setEditingPrecios({...editingPrecios, fotocopia_gracia_bn: e.target.value})}
                     min="0"
+                    step="1"
+                    placeholder="Ej: 1"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-teal-500"
                   />
                 </div>
@@ -1754,10 +2205,161 @@ const Dashboard = () => {
                   <input
                     type="number"
                     value={editingPrecios.fotocopia_gracia_color || ''}
-                    onChange={e => setEditingPrecios({...editingPrecios, fotocopia_gracia_color: parseInt(e.target.value) || 0})}
+                    onChange={e => setEditingPrecios({...editingPrecios, fotocopia_gracia_color: e.target.value})}
                     min="0"
+                    step="1"
+                    placeholder="Ej: 1"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-teal-500"
                   />
+                </div>
+                </div>
+                </div>
+                
+                {/* Sección de Tipos de Hoja */}
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-lg font-medium text-gray-900">Tipos de Hoja</h4>
+                    <button
+                      onClick={() => setShowAddTipoHoja(true)}
+                      className="px-3 py-1 bg-teal-600 text-white rounded-md text-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                    >
+                      + Agregar Tipo
+                    </button>
+                  </div>
+                  
+                  {/* Lista de tipos de hoja */}
+                  <div className="space-y-3 max-h-60 overflow-y-auto">
+                    {tiposHoja.map((tipo) => (
+                      <div key={tipo.id} className="p-3 border border-gray-200 rounded-lg">
+                        {editingTipoHoja?.id === tipo.id ? (
+                          // Modo edición
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              value={editingTipoHoja.nombre}
+                              onChange={e => setEditingTipoHoja({...editingTipoHoja, nombre: e.target.value})}
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                              placeholder="Nombre del tipo de hoja"
+                            />
+                            <input
+                              type="text"
+                              value={editingTipoHoja.descripcion}
+                              onChange={e => setEditingTipoHoja({...editingTipoHoja, descripcion: e.target.value})}
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                              placeholder="Descripción"
+                            />
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="number"
+                                value={editingTipoHoja.costo_unitario}
+                                onChange={e => setEditingTipoHoja({...editingTipoHoja, costo_unitario: parseFloat(e.target.value) || 0})}
+                                className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                                placeholder="Costo"
+                                min="0"
+                                step="0.01"
+                              />
+                              <button
+                                onClick={() => handleEditTipoHoja(editingTipoHoja)}
+                                className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700"
+                              >
+                                ✓
+                              </button>
+                              <button
+                                onClick={() => setEditingTipoHoja(null)}
+                                className="px-2 py-1 bg-gray-500 text-white rounded text-xs hover:bg-gray-600"
+                              >
+                                ✗
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          // Modo visualización
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h5 className="font-medium text-gray-900">{tipo.nombre}</h5>
+                              <p className="text-sm text-gray-500">{tipo.descripcion}</p>
+                              <p className="text-sm text-gray-700">Costo: ${tipo.costo_unitario}</p>
+                            </div>
+                            <div className="flex items-center space-x-1">
+                              <button
+                                onClick={() => setEditingTipoHoja({...tipo})}
+                                className="p-1 text-blue-600 hover:text-blue-800"
+                                title="Editar"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => handleDeleteTipoHoja(tipo.id)}
+                                className="p-1 text-red-600 hover:text-red-800"
+                                title="Eliminar"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    
+                    {tiposHoja.length === 0 && (
+                      <div className="text-center py-4 text-gray-500">
+                        No hay tipos de hoja configurados
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Modal para agregar nuevo tipo */}
+                  {showAddTipoHoja && (
+                    <div className="mt-4 p-4 border-2 border-teal-200 rounded-lg bg-teal-50">
+                      <h5 className="font-medium text-gray-900 mb-3">Nuevo Tipo de Hoja</h5>
+                      <div className="space-y-2">
+                        <input
+                          type="text"
+                          value={newTipoHoja.nombre}
+                          onChange={e => setNewTipoHoja({...newTipoHoja, nombre: e.target.value})}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                          placeholder="Nombre del tipo de hoja (ej: A4 Premium)"
+                        />
+                        <input
+                          type="text"
+                          value={newTipoHoja.descripcion}
+                          onChange={e => setNewTipoHoja({...newTipoHoja, descripcion: e.target.value})}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                          placeholder="Descripción (opcional)"
+                        />
+                        <input
+                          type="number"
+                          value={newTipoHoja.costo_unitario}
+                          onChange={e => setNewTipoHoja({...newTipoHoja, costo_unitario: e.target.value})}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                          placeholder="Ej: 5.50"
+                          min="0"
+                          step="0.01"
+                        />
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={handleAddTipoHoja}
+                            className="px-3 py-2 bg-teal-600 text-white rounded-md text-sm hover:bg-teal-700"
+                          >
+                            Agregar
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowAddTipoHoja(false);
+                              setNewTipoHoja({ nombre: '', descripcion: '', costo_unitario: '' });
+                            }}
+                            className="px-3 py-2 bg-gray-500 text-white rounded-md text-sm hover:bg-gray-600"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1780,6 +2382,43 @@ const Dashboard = () => {
         </div>
       )}
       {/* Los toast ahora se manejan a través del ToastContext */}
+      
+      {/* Modal de confirmación */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-gray-600 bg-opacity-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="px-6 py-4">
+              <div className="flex items-center">
+                <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
+                  <svg className="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 15.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                </div>
+                <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                  <h3 className="text-lg leading-6 font-medium text-gray-900">Confirmar acción</h3>
+                  <div className="mt-2">
+                    <p className="text-sm text-gray-500">{confirmMessage}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-3 bg-gray-50 flex justify-end space-x-3">
+              <button
+                onClick={handleCancelConfirm}
+                className="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirm}
+                className="px-4 py-2 bg-red-600 border border-transparent rounded-md text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       {loading && (
         <div className="fixed inset-0 bg-gray-900 bg-opacity-30 flex items-center justify-center z-50">

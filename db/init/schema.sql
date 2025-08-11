@@ -84,6 +84,8 @@ CREATE TABLE historial_estados_acceso (
   INDEX idx_historial_estados_nuevo (estado_nuevo)
 ) ENGINE=InnoDB;
 
+
+
 /* =============================================================
    1) ROLES Y PERMISOS (RBAC) - Sistema Jerárquico
    ============================================================= */
@@ -472,6 +474,71 @@ CREATE TABLE usuarios_grupos (
 ) ENGINE=InnoDB;
 
 /* =============================================================
+   TIPOS DE HOJA Y FOTOCOPIAS
+   ============================================================= */
+CREATE TABLE IF NOT EXISTS tipos_hoja (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(100) NOT NULL,
+  descripcion TEXT,
+  costo_unitario DECIMAL(10,2) NOT NULL,
+  creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY ux_tipos_hoja_nombre (nombre)
+) ENGINE=InnoDB;
+
+-- Insertar tipos de hoja básicos (usar IGNORE para evitar errores si ya existen)
+INSERT IGNORE INTO tipos_hoja (nombre, descripcion, costo_unitario) VALUES
+('Carta', 'Papel tamaño carta estándar', 50.00),
+('Oficio', 'Papel tamaño oficio', 60.00),
+('Couche', 'Papel couche para impresiones especiales', 100.00),
+('A4', 'Papel tamaño A4 internacional', 55.00),
+('Legal', 'Papel tamaño legal', 65.00),
+('Adhesivo', 'Papel adhesivo para etiquetas', 120.00),
+('Transparencia', 'Papel transparencia para proyecciones', 150.00);
+
+-- Tabla de fotocopias
+DROP TABLE IF EXISTS fotocopias;
+CREATE TABLE fotocopias (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  cantidad INT NOT NULL,
+  multiplicador INT NOT NULL DEFAULT 1,
+  tipo ENUM('bn', 'color') NOT NULL,
+  tipo_hoja_id INT NOT NULL,
+  doble_hoja BOOLEAN DEFAULT FALSE,
+  comentario TEXT,
+  total_hojas INT NOT NULL,
+  usuario_id INT NOT NULL,
+  grupo_id INT,
+  registrado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
+  FOREIGN KEY (grupo_id) REFERENCES grupos(id),
+  FOREIGN KEY (tipo_hoja_id) REFERENCES tipos_hoja(id),
+  INDEX idx_fotocopias_tipo (tipo),
+  INDEX idx_fotocopias_fecha (registrado_en)
+) ENGINE=InnoDB;
+
+-- Tabla de auditoría de fotocopias
+DROP TABLE IF EXISTS auditoria_fotocopias;
+CREATE TABLE auditoria_fotocopias (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  fotocopia_id INT,
+  usuario_id INT NOT NULL,
+  accion ENUM('crear', 'actualizar', 'eliminar') NOT NULL,
+  cantidad INT NOT NULL,
+  multiplicador INT NOT NULL,
+  tipo ENUM('bn', 'color') NOT NULL,
+  tipo_hoja_id INT NOT NULL,
+  doble_hoja BOOLEAN NOT NULL,
+  comentario TEXT,
+  total_hojas INT NOT NULL,
+  fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
+  INDEX idx_auditoria_fotocopia (fotocopia_id),
+  INDEX idx_auditoria_fecha (fecha)
+) ENGINE=InnoDB;
+
+/* =============================================================
    TABLA DEPARTAMENTOS
    ============================================================= */
 DROP TABLE IF EXISTS departamentos;
@@ -609,33 +676,10 @@ CREATE TABLE usuarios_permisos_especiales (
 ) ENGINE=InnoDB;
 
 /* =============================================================
-   TABLA FOTOCOPIAS (registros de impresiones y copias)
-   ============================================================= */
-DROP TABLE IF EXISTS fotocopias;
-CREATE TABLE fotocopias (
-  id           INT AUTO_INCREMENT PRIMARY KEY,
-  usuario_id   INT NOT NULL,
-  grupo_id     INT NOT NULL,
-  cantidad     INT NOT NULL,
-  tipo         ENUM('bn', 'color') NOT NULL DEFAULT 'bn',
-  doble_hoja   BOOLEAN NOT NULL DEFAULT FALSE,
-  comentario   TEXT,
-  registrado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  
-  INDEX idx_fotocopias_usuario_fecha (usuario_id, registrado_en),
-  INDEX idx_fotocopias_grupo_fecha (grupo_id, registrado_en),
-  INDEX idx_fotocopias_fecha (registrado_en),
-  INDEX idx_fotocopias_tipo (tipo),
-  
-  FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
-  FOREIGN KEY (grupo_id) REFERENCES grupos(id) ON DELETE CASCADE
-) ENGINE=InnoDB;
-
-/* =============================================================
    INSERTAR DATOS DE PRUEBA PARA FOTOCOPIAS (opcional)
    ============================================================= */
 -- Se puede agregar datos de prueba aquí si es necesario
+-- NOTA: La tabla fotocopias se define en la línea 112 con todas las columnas necesarias
 
 /* =============================================================
    TABLA AUDITORIA (registro de cambios y acciones)

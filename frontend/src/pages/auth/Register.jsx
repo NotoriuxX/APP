@@ -161,7 +161,7 @@ export default function Register() {
                 id="email"
                 name="email"
                 type="email"
-                pattern="[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$"
+                pattern="[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$"
                 value={email}
                 onChange={e => setEmail(toEmailLower(e.target.value))}
                 placeholder="correo@ejemplo.com"

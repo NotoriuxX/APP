@@ -7,7 +7,46 @@ import {
 } from 'react-icons/fa';
 import { useToast } from '../../../components/ToastContext';
 
+// Definir API_URL al inicio
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3300';
+
+// Función helper para calcular hojas necesarias correctamente
+const calcularHojasNecesarias = (cantidad, multiplicador, dobleHoja) => {
+  // Asegurar valores por defecto para prevenir NaN
+  const cantidadNum = parseInt(cantidad) || 0;
+  const multiplicadorNum = parseInt(multiplicador) || 1;
+  
+  if (cantidadNum === 0) return 0;
+  
+  let hojasPorCopia;
+  
+  if (!dobleHoja) {
+    // Si no es doble cara, cada página necesita una hoja por copia
+    hojasPorCopia = cantidadNum;
+  } else {
+    // Para doble cara: calcular hojas necesarias para UNA copia del documento
+    if (cantidadNum % 2 === 0) {
+      // Páginas pares en el documento: se pueden dividir exactamente
+      hojasPorCopia = cantidadNum / 2;
+    } else {
+      // Páginas impares en el documento: la última página queda sola
+      hojasPorCopia = Math.floor(cantidadNum / 2) + 1;
+    }
+  }
+  
+  // Total = hojas por copia × número de copias
+  return hojasPorCopia * multiplicadorNum;
+};
+
 const PhotocopyPage = () => {
+  // Usar el hook de toast global primero
+  const toast = useToast();
+  
+  // Definir showToastMessage al principio
+  const showToastMessage = (message, type = 'success') => {
+    toast[type](message, 4000);
+  };
+
   // 1. Estado para el orden
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [photocopies, setPhotocopies] = useState([]);
@@ -26,7 +65,8 @@ const PhotocopyPage = () => {
     totalCopies: 0,
     totalSheets: 0,
     totalBN: 0,
-    totalColor: 0
+    totalColor: 0,
+    costoTotal: 0
   });
   // Estados para el modal de confirmación de eliminación
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -35,25 +75,72 @@ const PhotocopyPage = () => {
   
   const [photocopyData, setPhotocopyData] = useState({
     cantidad: '',
+    multiplicador: '',
     tipo: 'bn',
     doble_hoja: false,
-    comentario: ''
+    comentario: '',
+    tipo_hoja_id: ''  // Agregando el campo tipo_hoja_id
   });
+
+  // Estado para los tipos de hoja
+  const [tiposHoja, setTiposHoja] = useState([]);
+
+  // Función para cargar los tipos de hoja
+  const fetchTiposHoja = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/photocopies/tipos-hoja`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Error al cargar tipos de hoja');
+      }
+      
+      const data = await response.json();
+      setTiposHoja(data);
+      
+      // Si hay tipos de hoja, seleccionar el primero por defecto
+      if (data.length > 0) {
+        setPhotocopyData(prev => ({
+          ...prev,
+          tipo_hoja_id: data[0].id
+        }));
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      showToastMessage('Error al cargar los tipos de hoja', 'error');
+    }
+  }, []); // Eliminamos las dependencias para evitar el bucle
+
+  // Cargar tipos de hoja solo cuando el componente se monta
+  useEffect(() => {
+    let isMounted = true;
+    
+    const loadTiposHoja = async () => {
+      try {
+        await fetchTiposHoja();
+      } catch (error) {
+        if (isMounted) {
+          console.error('Error loading tipos hoja:', error);
+        }
+      }
+    };
+
+    loadTiposHoja();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []); // Solo se ejecuta al montar el componente
 
   // Estado para controlar las animaciones CRUD
   const [animatedRows, setAnimatedRows] = useState(new Set());
   const [lastOperation, setLastOperation] = useState(null); // 'add', 'update', 'delete'
 
-  // Usar el hook de toast global
-  const toast = useToast();
-  
-  // Función para mostrar toast usando el sistema global
-  const showToastMessage = (message, type = 'success') => {
-    toast[type](message, 4000);
-  };
-
   const itemsPerPageOptions = [5, 10, 25, 50];
-  const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3300';
 
   // Función para obtener fecha actual para filtros
   const getDateForFilter = useCallback((period) => {
@@ -162,26 +249,48 @@ const PhotocopyPage = () => {
   }, [photocopies, searchTerm]);
 
   const calculateStats = useCallback(() => {
-    const totalCopies = photocopies.reduce((sum, p) => sum + p.cantidad, 0);
+    // Total de páginas impresas (cantidad × multiplicador de todos los registros)
+    const totalPagesImpressed = photocopies.reduce((sum, p) => {
+      const cantidad = p.cantidad || 0;
+      const multiplicador = p.multiplicador || 1;
+      return sum + (cantidad * multiplicador);
+    }, 0);
+    
+    // Total de hojas físicas gastadas
     const totalSheets = photocopies.reduce((sum, p) => {
-      // Si es doble cara, se usa la mitad de hojas por cantidad de impresiones
-      const sheets = p.doble_hoja ? Math.ceil(p.cantidad / 2) : p.cantidad;
+      const cantidad = p.cantidad || 0;
+      const multiplicador = p.multiplicador || 1;
+      const sheets = calcularHojasNecesarias(cantidad, multiplicador, p.doble_hoja);
       return sum + sheets;
     }, 0);
-    const totalBN = photocopies.filter(p => p.tipo === 'bn').reduce((sum, p) => sum + p.cantidad, 0);
-    const totalColor = photocopies.filter(p => p.tipo === 'color').reduce((sum, p) => sum + p.cantidad, 0);
+    
+    // Total de páginas B/N
+    const totalBN = photocopies.filter(p => p.tipo === 'bn').reduce((sum, p) => {
+      const cantidad = p.cantidad || 0;
+      const multiplicador = p.multiplicador || 1;
+      return sum + (cantidad * multiplicador);
+    }, 0);
+    
+    // Total de páginas Color
+    const totalColor = photocopies.filter(p => p.tipo === 'color').reduce((sum, p) => {
+      const cantidad = p.cantidad || 0;
+      const multiplicador = p.multiplicador || 1;
+      return sum + (cantidad * multiplicador);
+    }, 0);
 
     setStats({
-      totalCopies,
-      totalSheets,
-      totalBN,
-      totalColor
+      totalCopies: totalPagesImpressed,  // Total de páginas impresas
+      totalSheets: totalSheets,          // Total de hojas físicas gastadas
+      totalBN: totalBN,                  // Total de páginas B/N
+      totalColor: totalColor,            // Total de páginas Color
+      costoTotal: 0
     });
   }, [photocopies]);
 
   // Función para manejar la apertura del modal con animación
   const handleRowClick = useCallback((photocopy) => {
     console.log('Row clicked:', photocopy); // Debug
+    console.log('multiplicador en el click:', photocopy.multiplicador); // Debug específico
     setEditingPhotocopy(photocopy);
     setShowModal(true);
     setTimeout(() => {
@@ -229,6 +338,10 @@ const PhotocopyPage = () => {
       alert('La cantidad debe ser mayor a 0');
       return false;
     }
+    if (!photocopyData.multiplicador || photocopyData.multiplicador <= 0) {
+      alert('El número de copias debe ser mayor a 0');
+      return false;
+    }
     if (!photocopyData.comentario.trim()) {
       alert('La descripción es obligatoria');
       return false;
@@ -264,7 +377,9 @@ const PhotocopyPage = () => {
       const method = editingPhotocopy ? 'PUT' : 'POST';
       const payload = {
         cantidad: parseInt(photocopyData.cantidad),
+        multiplicador: parseInt(photocopyData.multiplicador),
         tipo: photocopyData.tipo,
+        tipo_hoja_id: parseInt(photocopyData.tipo_hoja_id),
         doble_hoja: photocopyData.doble_hoja,
         comentario: photocopyData.comentario.trim()
       };
@@ -302,6 +417,20 @@ const PhotocopyPage = () => {
   const handleUpdate = async () => {
     if (!editingPhotocopy) return;
     
+    console.log('🔍 FRONTEND - Estado editingPhotocopy completo:', editingPhotocopy);
+    console.log('🔍 FRONTEND - multiplicador específicamente:', editingPhotocopy.multiplicador, typeof editingPhotocopy.multiplicador);
+    
+    const payload = {
+      cantidad: editingPhotocopy.cantidad,
+      multiplicador: editingPhotocopy.multiplicador,
+      tipo: editingPhotocopy.tipo,
+      tipo_hoja_id: editingPhotocopy.tipo_hoja_id,
+      doble_hoja: editingPhotocopy.doble_hoja,
+      comentario: editingPhotocopy.comentario
+    };
+    
+    console.log('🔍 FRONTEND - Payload a enviar:', payload);
+    
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
@@ -311,12 +440,7 @@ const PhotocopyPage = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({
-          cantidad: editingPhotocopy.cantidad,
-          tipo: editingPhotocopy.tipo,
-          doble_hoja: editingPhotocopy.doble_hoja,
-          comentario: editingPhotocopy.comentario
-        })
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
@@ -405,9 +529,11 @@ const PhotocopyPage = () => {
     setEditingPhotocopy(photocopy);
     setPhotocopyData({
       cantidad: photocopy.cantidad.toString(),
+      multiplicador: (photocopy.multiplicador || 1).toString(),
       tipo: photocopy.tipo,
       doble_hoja: photocopy.doble_hoja === 1,
-      comentario: photocopy.comentario
+      comentario: photocopy.comentario,
+      tipo_hoja_id: photocopy.tipo_hoja_id
     });
   };
 
@@ -419,9 +545,11 @@ const PhotocopyPage = () => {
   const resetForm = () => {
     setPhotocopyData({
       cantidad: '',
+      multiplicador: '',
       tipo: 'bn',
       doble_hoja: false,
-      comentario: ''
+      comentario: '',
+      tipo_hoja_id: tiposHoja.length > 0 ? tiposHoja[0].id : ''
     });
   };
 
@@ -498,16 +626,28 @@ const PhotocopyPage = () => {
       }
     },
     'animateTableRowIn': {
-      animation: 'fadeInTableRow 0.5s ease-out forwards'
+      animationName: 'fadeInTableRow',
+      animationDuration: '0.5s',
+      animationTimingFunction: 'ease-out',
+      animationFillMode: 'forwards'
     },
     'animateTableRowStaggered': {
-      animation: 'fadeInTableRowStaggered 0.4s ease-out forwards'
+      animationName: 'fadeInTableRowStaggered',
+      animationDuration: '0.4s',
+      animationTimingFunction: 'ease-out',
+      animationFillMode: 'forwards'
     },
     'animateTableRowOut': {
-      animation: 'fadeOutTableRow 0.3s ease-out forwards'
+      animationName: 'fadeOutTableRow',
+      animationDuration: '0.3s',
+      animationTimingFunction: 'ease-out',
+      animationFillMode: 'forwards'
     },
     'animateTableRowUpdate': {
-      animation: 'scaleInRow 0.4s ease-out forwards',
+      animationName: 'scaleInRow',
+      animationDuration: '0.4s',
+      animationTimingFunction: 'ease-out',
+      animationFillMode: 'forwards',
       backgroundColor: 'rgba(20, 184, 166, 0.1)'
     }
   };
@@ -540,10 +680,10 @@ const PhotocopyPage = () => {
           </h3>
           
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Cantidad (Copias/Impresiones) *
+                  Páginas del Documento *
                 </label>
                 <input
                   type="number"
@@ -551,9 +691,30 @@ const PhotocopyPage = () => {
                   value={photocopyData.cantidad}
                   onChange={(e) => setPhotocopyData(prev => ({ ...prev, cantidad: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  placeholder="Ej: 9"
+                  required
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  ¿Cuántas páginas tiene tu documento original?
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Número de Copias *
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={photocopyData.multiplicador}
+                  onChange={(e) => setPhotocopyData(prev => ({ ...prev, multiplicador: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
                   placeholder="Ej: 10"
                   required
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  ¿Cuántas copias completas necesitas?
+                </p>
               </div>
 
               <div>
@@ -568,6 +729,40 @@ const PhotocopyPage = () => {
                   <option value="bn">Blanco y Negro</option>
                   <option value="color">Color</option>
                 </select>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Tipo de Hoja *
+                </label>
+                <select
+                  value={photocopyData.tipoHojaId}
+                  onChange={(e) => setPhotocopyData(prev => ({ ...prev, tipoHojaId: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
+                >
+                  {tiposHoja.map(tipo => (
+                    <option key={tipo.id} value={tipo.id}>
+                      {tipo.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center">
+                <div className="bg-gray-50 rounded-lg p-4 w-full">
+                  <div className="text-sm text-gray-600">
+                    <p>Total páginas a imprimir: <span className="font-medium">{(parseInt(photocopyData.cantidad) || 0) * (parseInt(photocopyData.multiplicador) || 1)}</span></p>
+                    <p>Hojas físicas a gastar: <span className="font-medium">
+                      {calcularHojasNecesarias(
+                        parseInt(photocopyData.cantidad) || 0, 
+                        parseInt(photocopyData.multiplicador) || 1, 
+                        photocopyData.doble_hoja
+                      )}
+                    </span></p>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -646,7 +841,7 @@ const PhotocopyPage = () => {
                 <FaClipboardList className="text-teal-600 text-xl" />
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Total Impresiones</p>
+                <p className="text-sm font-medium text-gray-600">Total Páginas</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.totalCopies}</p>
               </div>
             </div>
@@ -670,7 +865,7 @@ const PhotocopyPage = () => {
                 <FaPrint className="text-gray-600 text-xl" />
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Impresiones B/N</p>
+                <p className="text-sm font-medium text-gray-600">Páginas B/N</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.totalBN}</p>
               </div>
             </div>
@@ -682,7 +877,7 @@ const PhotocopyPage = () => {
                 <FaPalette className="text-red-600 text-xl" />
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Impresiones Color</p>
+                <p className="text-sm font-medium text-gray-600">Páginas Color</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.totalColor}</p>
               </div>
             </div>
@@ -839,7 +1034,8 @@ const PhotocopyPage = () => {
                         onClick={() => requestSort('cantidad')}
                         className="px-2 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:text-teal-600"
                       >
-                        Cant.
+                        <span className="hidden sm:inline">Páginas × Copias</span>
+                        <span className="sm:hidden">P×C</span>
                         {sortConfig.key === 'cantidad'
                           ? (sortConfig.direction === 'asc'
                               ? <FaSortUp className="inline ml-1"/>
@@ -925,10 +1121,11 @@ const PhotocopyPage = () => {
                           </td>
                           <td className="px-2 sm:px-6 py-2 sm:py-4 whitespace-nowrap">
                             <div className="text-xs sm:text-sm text-gray-900 font-medium">
-                              {photocopy.cantidad}
+                              {photocopy.cantidad} págs × {photocopy.multiplicador || 1} copias
                             </div>
                             <div className="text-xs text-gray-500 hidden sm:block">
-                              {photocopy.doble_hoja ? `${Math.ceil(photocopy.cantidad / 2)} hojas` : `${photocopy.cantidad} hojas`}
+                              <div>Total páginas: {(photocopy.cantidad || 0) * (photocopy.multiplicador || 1)}</div>
+                              <div>Hojas gastadas: {calcularHojasNecesarias(photocopy.cantidad, photocopy.multiplicador || 1, photocopy.doble_hoja)}</div>
                             </div>
                           </td>
                           <td className="px-2 sm:px-6 py-2 sm:py-4 whitespace-nowrap">
@@ -1071,7 +1268,7 @@ const PhotocopyPage = () => {
                       <div className="mt-2 space-y-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Cantidad
+                            Páginas del Documento
                           </label>
                           <input
                             type="number"
@@ -1080,6 +1277,30 @@ const PhotocopyPage = () => {
                               ...editingPhotocopy,
                               cantidad: parseInt(e.target.value)
                             })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Número de Copias
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={editingPhotocopy?.multiplicador || 1}
+                            onChange={(e) => {
+                              const inputValue = e.target.value;
+                              const parsedValue = parseInt(inputValue);
+                              console.log('🔍 MODAL INPUT - inputValue:', inputValue, 'parsedValue:', parsedValue);
+                              
+                              setEditingPhotocopy({
+                                ...editingPhotocopy,
+                                multiplicador: parsedValue || 1
+                              });
+                              
+                              console.log('🔍 MODAL INPUT - Nuevo estado multiplicador:', parsedValue || 1);
+                            }}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                           />
                         </div>

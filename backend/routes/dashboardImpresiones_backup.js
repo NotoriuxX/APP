@@ -275,24 +275,7 @@ router.get('/estadisticas', verificarToken, async (req, res) => {
       try {
         console.log('🔍 Iniciando consulta de estadísticas generales...');
         
-        // Primero obtener la configuración de precios y gracias
-        const configQuery = `
-          SELECT configuracion_clave, configuracion_valor 
-          FROM configuracion_sistema 
-          WHERE configuracion_clave IN (
-            'precio_bn', 'precio_color', 'precio_doble_recargo',
-            'fotocopia_gracia_bn', 'fotocopia_gracia_color'
-          )
-        `;
-        const [configResult] = await db.promise().query(configQuery);
-        const config = {};
-        configResult.forEach(row => {
-          config[row.configuracion_clave] = parseFloat(row.configuracion_valor);
-        });
-        
-        console.log('⚙️ Configuración obtenida:', config);
-        
-        // Consulta base para estadísticas con cálculos de costos mejorados
+        // Simplificar la consulta para evitar problemas con tablas vacías
         const statsQuery = `SELECT 
            COUNT(*) AS total_registros,
            COALESCE(SUM(f.cantidad), 0) AS total_copias,
@@ -301,27 +284,22 @@ router.get('/estadisticas', verificarToken, async (req, res) => {
            COALESCE(SUM(CASE WHEN f.tipo = 'color' THEN f.cantidad * COALESCE(f.multiplicador, 1) ELSE 0 END), 0) AS total_color,
            COALESCE(SUM(CASE WHEN f.doble_hoja = 1 THEN f.cantidad * COALESCE(f.multiplicador, 1) ELSE 0 END), 0) AS total_doble_hoja,
            COALESCE(SUM(CASE WHEN f.doble_hoja = 0 THEN f.cantidad * COALESCE(f.multiplicador, 1) ELSE 0 END), 0) AS total_una_hoja,
-           CAST(COALESCE(SUM(CASE 
+           COALESCE(SUM(CASE 
                 WHEN f.doble_hoja = 1 THEN 
+                  -- Para doble cara: calcular hojas por copia individual, luego multiplicar
                   CASE 
                     WHEN f.cantidad % 2 = 0 THEN (f.cantidad / 2) * COALESCE(f.multiplicador, 1)
                     ELSE (FLOOR(f.cantidad / 2) + 1) * COALESCE(f.multiplicador, 1)
                   END
-                ELSE f.cantidad * COALESCE(f.multiplicador, 1) END), 0) AS SIGNED) AS total_hojas,
+                ELSE f.cantidad * COALESCE(f.multiplicador, 1) END), 0) AS total_hojas,
            COUNT(DISTINCT f.usuario_id) AS usuarios_unicos,
-           -- Costo de hojas (siempre se cobra)
-           CAST(COALESCE(SUM((CASE 
+           COALESCE(SUM((CASE 
                 WHEN f.doble_hoja = 1 THEN 
                   CASE 
                     WHEN f.cantidad % 2 = 0 THEN (f.cantidad / 2) * COALESCE(f.multiplicador, 1)
                     ELSE (FLOOR(f.cantidad / 2) + 1) * COALESCE(f.multiplicador, 1)
                   END
-                ELSE f.cantidad * COALESCE(f.multiplicador, 1) END) * COALESCE(th.costo_unitario, 0)), 0) AS DECIMAL(10,2)) AS costo_total_hojas,
-           -- Totales por tipo para cálculo de costos de impresión
-           COALESCE(SUM(CASE WHEN f.tipo = 'bn' THEN f.cantidad * COALESCE(f.multiplicador, 1) ELSE 0 END), 0) AS total_impresiones_bn,
-           COALESCE(SUM(CASE WHEN f.tipo = 'color' THEN f.cantidad * COALESCE(f.multiplicador, 1) ELSE 0 END), 0) AS total_impresiones_color,
-           COALESCE(SUM(CASE WHEN f.tipo = 'bn' AND f.doble_hoja = 1 THEN f.cantidad * COALESCE(f.multiplicador, 1) ELSE 0 END), 0) AS total_doble_bn,
-           COALESCE(SUM(CASE WHEN f.tipo = 'color' AND f.doble_hoja = 1 THEN f.cantidad * COALESCE(f.multiplicador, 1) ELSE 0 END), 0) AS total_doble_color
+                ELSE f.cantidad * COALESCE(f.multiplicador, 1) END) * th.costo_unitario), 0) AS costo_total_hojas
          FROM fotocopias f
          LEFT JOIN tipos_hoja th ON f.tipo_hoja_id = th.id
          ${whereClause}`;
@@ -330,62 +308,7 @@ router.get('/estadisticas', verificarToken, async (req, res) => {
         console.log('📝 Parámetros:', params);
         
         [stats] = await db.promise().query(statsQuery, params);
-        
-        if (stats && stats.length > 0) {
-          const baseStats = stats[0];
-          
-          // Calcular costos de impresión considerando gracias
-          const gracia_bn = config.fotocopia_gracia_bn || 0;
-          const gracia_color = config.fotocopia_gracia_color || 0;
-          const precio_bn = config.precio_bn || 0;
-          const precio_color = config.precio_color || 0;
-          const precio_doble_recargo = config.precio_doble_recargo || 0;
-          
-          // Impresiones que se cobran (después de restar gracias)
-          const impresiones_cobrables_bn = Math.max(0, baseStats.total_impresiones_bn - gracia_bn);
-          const impresiones_cobrables_color = Math.max(0, baseStats.total_impresiones_color - gracia_color);
-          
-          // Costo de impresiones
-          const costo_impresiones_bn = impresiones_cobrables_bn * precio_bn;
-          const costo_impresiones_color = impresiones_cobrables_color * precio_color;
-          
-          // Recargo por doble cara (solo se aplica a impresiones cobrables)
-          const recargo_doble_bn = Math.min(baseStats.total_doble_bn, impresiones_cobrables_bn) * precio_doble_recargo;
-          const recargo_doble_color = Math.min(baseStats.total_doble_color, impresiones_cobrables_color) * precio_doble_recargo;
-          
-          // Costo total de impresiones
-          const costo_total_impresiones = costo_impresiones_bn + costo_impresiones_color + recargo_doble_bn + recargo_doble_color;
-          
-          // Costo total general
-          const costo_total = parseFloat(baseStats.costo_total_hojas) + costo_total_impresiones;
-          
-          // Agregar campos calculados
-          stats[0] = {
-            ...baseStats,
-            // Costos desglosados
-            costo_impresiones_bn: parseFloat(costo_impresiones_bn.toFixed(2)),
-            costo_impresiones_color: parseFloat(costo_impresiones_color.toFixed(2)),
-            recargo_doble_bn: parseFloat(recargo_doble_bn.toFixed(2)),
-            recargo_doble_color: parseFloat(recargo_doble_color.toFixed(2)),
-            costo_total_impresiones: parseFloat(costo_total_impresiones.toFixed(2)),
-            costo_total: parseFloat(costo_total.toFixed(2)),
-            // Información de gracias
-            impresiones_gratis_bn: Math.min(baseStats.total_impresiones_bn, gracia_bn),
-            impresiones_gratis_color: Math.min(baseStats.total_impresiones_color, gracia_color),
-            impresiones_cobrables_bn,
-            impresiones_cobrables_color,
-            // Configuración aplicada
-            config_aplicada: {
-              gracia_bn,
-              gracia_color,
-              precio_bn,
-              precio_color,
-              precio_doble_recargo
-            }
-          };
-        }
-        
-        console.log('✅ Estadísticas generales calculadas:', stats[0]);
+        console.log('✅ Estadísticas generales obtenidas:', stats[0]);
       } catch (statsError) {
         console.error('❌ Error en estadísticas generales:', statsError);
         // Si esta consulta falla, usar un objeto predeterminado para evitar errores
@@ -999,32 +922,6 @@ router.post('/precios', verificarToken, async (req, res) => {
   }
 });
 
-// ==================== RUTAS PARA TIPOS DE HOJA ====================
-
-// GET: Obtener todos los tipos de hoja
-router.get('/tipos-hoja', verificarToken, async (req, res) => {
-  try {
-    console.log('🔍 Obteniendo tipos de hoja...');
-    
-    const [tipos] = await db.promise().query(`
-      SELECT id, nombre, descripcion, costo_unitario, activo, creado_en
-      FROM tipos_hoja 
-      WHERE activo = 1
-      ORDER BY nombre ASC
-    `);
-    
-    console.log(`✅ Encontrados ${tipos.length} tipos de hoja`);
-    res.json(tipos);
-    
-  } catch (error) {
-    console.error('❌ Error al obtener tipos de hoja:', error);
-    res.status(500).json({ 
-      message: 'Error al obtener tipos de hoja',
-      error: error.message 
-    });
-  }
-});
-
 // Crear nuevo tipo de hoja
 router.post('/tipos-hoja', verificarToken, async (req, res) => {
   const usuarioId = req.usuario.id;
@@ -1040,15 +937,9 @@ router.post('/tipos-hoja', verificarToken, async (req, res) => {
     }
     
     // Validar datos requeridos
-    if (!nombre || nombre.trim() === '') {
+    if (!nombre || !costo_unitario) {
       return res.status(400).json({ 
-        message: 'El nombre es requerido' 
-      });
-    }
-    
-    if (!costo_unitario || parseFloat(costo_unitario) <= 0) {
-      return res.status(400).json({ 
-        message: 'El costo unitario debe ser mayor a 0' 
+        message: 'Nombre y costo unitario son campos obligatorios' 
       });
     }
     
@@ -1287,5 +1178,189 @@ router.get('/actividad', verificarToken, async (req, res) => {
   }
 });
 
+// ==================== RUTAS PARA TIPOS DE HOJA ====================
+
+// GET: Obtener todos los tipos de hoja
+router.get('/tipos-hoja', verificarToken, async (req, res) => {
+  try {
+    console.log('🔍 Obteniendo tipos de hoja...');
+    
+    const [tipos] = await db.promise().query(`
+      SELECT id, nombre, descripcion, costo_unitario, activo, creado_en
+      FROM tipos_hoja 
+      WHERE activo = 1
+      ORDER BY nombre ASC
+    `);
+    
+    console.log(`✅ ${tipos.length} tipos de hoja encontrados`);
+    res.json({ tipos_hoja: tipos });
+    
+  } catch (error) {
+    console.error('❌ Error al obtener tipos de hoja:', error);
+    res.status(500).json({ 
+      message: 'Error al obtener tipos de hoja',
+      error: error.message 
+    });
+  }
+});
+
+// POST: Crear nuevo tipo de hoja
+router.post('/tipos-hoja', verificarToken, async (req, res) => {
+  try {
+    const { nombre, descripcion, costo_unitario } = req.body;
+    
+    // Validaciones
+    if (!nombre || nombre.trim() === '') {
+      return res.status(400).json({ message: 'El nombre es requerido' });
+    }
+    
+    if (costo_unitario < 0) {
+      return res.status(400).json({ message: 'El costo unitario no puede ser negativo' });
+    }
+    
+    // Verificar si ya existe un tipo con ese nombre
+    const [existing] = await db.promise().query(
+      'SELECT id FROM tipos_hoja WHERE nombre = ? AND activo = 1',
+      [nombre.trim()]
+    );
+    
+    if (existing.length > 0) {
+      return res.status(400).json({ message: 'Ya existe un tipo de hoja con ese nombre' });
+    }
+    
+    // Insertar nuevo tipo
+    const [result] = await db.promise().query(`
+      INSERT INTO tipos_hoja (nombre, descripcion, costo_unitario)
+      VALUES (?, ?, ?)
+    `, [nombre.trim(), descripcion?.trim() || '', parseFloat(costo_unitario) || 0]);
+    
+    // Obtener el tipo recién creado
+    const [newTipo] = await db.promise().query(
+      'SELECT id, nombre, descripcion, costo_unitario, activo, creado_en FROM tipos_hoja WHERE id = ?',
+      [result.insertId]
+    );
+    
+    console.log('✅ Tipo de hoja creado:', newTipo[0]);
+    res.json({ 
+      message: 'Tipo de hoja creado correctamente',
+      tipo_hoja: newTipo[0]
+    });
+    
+  } catch (error) {
+    console.error('❌ Error al crear tipo de hoja:', error);
+    res.status(500).json({ 
+      message: 'Error al crear tipo de hoja',
+      error: error.message 
+    });
+  }
+});
+
+// PUT: Actualizar tipo de hoja
+router.put('/tipos-hoja/:id', verificarToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { nombre, descripcion, costo_unitario } = req.body;
+    
+    // Validaciones
+    if (!nombre || nombre.trim() === '') {
+      return res.status(400).json({ message: 'El nombre es requerido' });
+    }
+    
+    if (costo_unitario < 0) {
+      return res.status(400).json({ message: 'El costo unitario no puede ser negativo' });
+    }
+    
+    // Verificar si el tipo existe
+    const [existing] = await db.promise().query(
+      'SELECT id FROM tipos_hoja WHERE id = ? AND activo = 1',
+      [id]
+    );
+    
+    if (existing.length === 0) {
+      return res.status(404).json({ message: 'Tipo de hoja no encontrado' });
+    }
+    
+    // Verificar si ya existe otro tipo con ese nombre
+    const [duplicate] = await db.promise().query(
+      'SELECT id FROM tipos_hoja WHERE nombre = ? AND id != ? AND activo = 1',
+      [nombre.trim(), id]
+    );
+    
+    if (duplicate.length > 0) {
+      return res.status(400).json({ message: 'Ya existe otro tipo de hoja con ese nombre' });
+    }
+    
+    // Actualizar tipo
+    await db.promise().query(`
+      UPDATE tipos_hoja 
+      SET nombre = ?, descripcion = ?, costo_unitario = ?
+      WHERE id = ?
+    `, [nombre.trim(), descripcion?.trim() || '', parseFloat(costo_unitario) || 0, id]);
+    
+    // Obtener el tipo actualizado
+    const [updatedTipo] = await db.promise().query(
+      'SELECT id, nombre, descripcion, costo_unitario, activo, creado_en FROM tipos_hoja WHERE id = ?',
+      [id]
+    );
+    
+    console.log('✅ Tipo de hoja actualizado:', updatedTipo[0]);
+    res.json({ 
+      message: 'Tipo de hoja actualizado correctamente',
+      tipo_hoja: updatedTipo[0]
+    });
+    
+  } catch (error) {
+    console.error('❌ Error al actualizar tipo de hoja:', error);
+    res.status(500).json({ 
+      message: 'Error al actualizar tipo de hoja',
+      error: error.message 
+    });
+  }
+});
+
+// DELETE: Eliminar tipo de hoja (borrado lógico)
+router.delete('/tipos-hoja/:id', verificarToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Verificar si el tipo existe
+    const [existing] = await db.promise().query(
+      'SELECT id FROM tipos_hoja WHERE id = ? AND activo = 1',
+      [id]
+    );
+    
+    if (existing.length === 0) {
+      return res.status(404).json({ message: 'Tipo de hoja no encontrado' });
+    }
+    
+    // Verificar si está siendo usado en fotocopias
+    const [inUse] = await db.promise().query(
+      'SELECT COUNT(*) as count FROM fotocopias WHERE tipo_hoja_id = ?',
+      [id]
+    );
+    
+    if (inUse[0].count > 0) {
+      return res.status(400).json({ 
+        message: 'No se puede eliminar este tipo de hoja porque está siendo usado en registros de fotocopias'
+      });
+    }
+    
+    // Borrado lógico
+    await db.promise().query(
+      'UPDATE tipos_hoja SET activo = 0 WHERE id = ?',
+      [id]
+    );
+    
+    console.log('✅ Tipo de hoja eliminado (borrado lógico):', id);
+    res.json({ message: 'Tipo de hoja eliminado correctamente' });
+    
+  } catch (error) {
+    console.error('❌ Error al eliminar tipo de hoja:', error);
+    res.status(500).json({ 
+      message: 'Error al eliminar tipo de hoja',
+      error: error.message 
+    });
+  }
+});
 
 module.exports = router;
